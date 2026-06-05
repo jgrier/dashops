@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DashOps · Operator</title>
+  <style>
+    :root {
+      --bg:        #0e1116;
+      --surface:   #161b22;
+      --surface-2: #1f262e;
+      --border:    #2a3038;
+      --fg:        #e6edf3;
+      --fg-muted:  #9ba6b3;
+      --accent:    #f55b35;
+      --user-bg:   #1f3a5f;
+      --assistant-bg: #1f262e;
+      --tool-bg:   #1a2a1f;
+      --tool-fg:   #9bd5a8;
+      --system-bg: #3a1f1f;
+      --system-fg: #ffb0a0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    header .badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--fg-muted);
+    }
+    header .status {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--fg-muted);
+    }
+    header .status .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #555;
+      margin-right: 6px;
+      vertical-align: 1px;
+    }
+    header .status.idle .dot     { background: #555; }
+    header .status.thinking .dot,
+    header .status.calling_tool .dot { background: #ffcc4d; animation: pulse 1.4s infinite; }
+    header .status.complete .dot { background: #4dd478; }
+    header .status.failed .dot   { background: #f55b35; }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.45; }
+      50%      { opacity: 1; }
+    }
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .msg {
+      max-width: 720px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      line-height: 1.45;
+      font-size: 14px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .msg.user      { background: var(--user-bg); align-self: flex-end; }
+    .msg.assistant { background: var(--assistant-bg); border: 1px solid var(--border); }
+    .msg.tool {
+      background: var(--tool-bg);
+      color: var(--tool-fg);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+    }
+    .msg.system    { background: var(--system-bg); color: var(--system-fg); font-size: 13px; }
+    .msg .role {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-muted);
+      margin-bottom: 4px;
+    }
+    .msg .cost {
+      display: inline-block;
+      margin-left: 10px;
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .msg .tool-result {
+      margin-top: 6px;
+      max-height: 280px;
+      overflow: auto;
+      font-size: 12px;
+      padding: 8px;
+      background: rgba(0,0,0,0.25);
+      border-radius: 4px;
+    }
+    footer {
+      padding: 12px 20px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    form {
+      display: flex;
+      gap: 8px;
+    }
+    input[type="text"] {
+      flex: 1;
+      background: var(--surface-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input[type="text"]:focus { outline: none; border-color: var(--accent); }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .seed-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .seed-chip {
+      font-size: 11px;
+      padding: 4px 10px;
+      background: var(--surface-2);
+      color: var(--fg-muted);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    .seed-chip:hover { color: var(--fg); border-color: #4a525c; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DashOps</h1>
+    <span class="badge">operator</span>
+    <span class="badge" id="session-id-badge">session: -</span>
+    <span class="status idle" id="status"><span class="dot"></span><span id="status-text">idle</span></span>
+  </header>
+
+  <main id="messages"></main>
+
+  <footer>
+    <form id="input-form">
+      <input id="input" type="text" placeholder="What's going on with delivery #12345?" autocomplete="off" autofocus />
+      <button type="submit">Send</button>
+    </form>
+    <div class="seed-chips">
+      <span class="seed-chip" data-seed="What happened with delivery #12345?">What happened with delivery #12345?</span>
+      <span class="seed-chip" data-seed="Investigate delivery #12399">Investigate delivery #12399</span>
+      <span class="seed-chip" data-seed="Check on delivery #12346">Check on delivery #12346</span>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

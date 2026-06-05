@@ -1,5 +1,5 @@
 {
-  "name": "@dashops/hello-ts",
+  "name": "@dashops/ops-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
+    "@dashops/shared": "0.1.0",
     "@restatedev/restate-sdk": "^1.7.0"
   },
   "devDependencies": {

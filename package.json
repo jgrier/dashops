@@ -4,14 +4,16 @@
   "private": true,
   "description": "DashOps — DoorDash-flavored agent platform demo on Restate. Operator agent + agent gateway + async human-in-the-loop approval.",
   "workspaces": [
-    "services/*",
-    "web/*"
+    "services/*"
   ],
   "scripts": {
     "restate:up": "docker compose up -d restate",
     "restate:down": "docker compose down",
     "restate:logs": "docker compose logs -f restate",
-    "register": "bash scripts/register.sh"
+    "register": "bash scripts/register.sh",
+    "dev:gateway": "npm --workspace=@dashops/gateway run dev",
+    "dev:tools": "npm --workspace=@dashops/tools run dev",
+    "dev:ops": "npm --workspace=@dashops/ops-agent run dev"
   },
   "engines": {
     "node": ">=20"
