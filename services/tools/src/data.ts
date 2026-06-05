@@ -5,7 +5,7 @@ export interface Delivery {
   deliveryId: string;
   customerId: string;
   merchantId: string;
-  dasherId: string;
+  driverId: string;
   status: "delivered" | "cancelled" | "in_progress";
   scheduledAt: string;
   completedAt?: string;
@@ -35,7 +35,7 @@ const deliveries: Record<string, Delivery> = {
     deliveryId: "12345",
     customerId: "C-901",
     merchantId: "M-44",
-    dasherId: "D-1108",
+    driverId: "D-1108",
     status: "delivered",
     scheduledAt: "2026-06-04T18:10:00Z",
     completedAt: "2026-06-04T19:42:00Z",
@@ -46,7 +46,7 @@ const deliveries: Record<string, Delivery> = {
     deliveryId: "12346",
     customerId: "C-712",
     merchantId: "M-08",
-    dasherId: "D-2210",
+    driverId: "D-2210",
     status: "delivered",
     scheduledAt: "2026-06-04T19:00:00Z",
     completedAt: "2026-06-04T19:31:00Z",
@@ -57,7 +57,7 @@ const deliveries: Record<string, Delivery> = {
     deliveryId: "12399",
     customerId: "C-555",
     merchantId: "M-21",
-    dasherId: "D-9001",
+    driverId: "D-9001",
     status: "delivered",
     scheduledAt: "2026-06-04T20:15:00Z",
     completedAt: "2026-06-04T21:07:00Z",

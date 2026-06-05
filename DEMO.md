@@ -11,7 +11,7 @@ All five demo scenes are functional and verified:
 1. **Insight mode** — operator asks "what happened with delivery #12345?", agent runs a multi-step investigation, journals every step in the Restate UI.
 2. **PII guardrail** — gateway-side LLM-style middleware blocks calls whose params contain PII patterns.
 3. **Async HITL approval** — agent suspends on an awakeable for hours/days; resumes on approver click; **kill the ops-agent process mid-suspension and approval still completes the agent on restart.**
-4. **Hierarchical token-bucket rate limits** — 7 calls against a 6/min tool: first six instant, 7th durably suspended on `ctx.sleep` (the answer to Vasily's "who handles retry when overloaded" question).
+4. **Hierarchical token-bucket rate limits** — 7 calls against a 6/min tool: first six instant, 7th durably suspended on `ctx.sleep`. No client-side retry loop anywhere — the answer to "who handles backoff when the tool's overloaded?"
 5. **Failure / patch / replay** — buggy `apply_credit` retries 3x, pauses; restart tool with patched code; `PATCH /invocations/{id}/resume`; replay continues from the failure point on the new code.
 
 ---
@@ -230,12 +230,12 @@ Talking points:
 
 ### Gateway is TypeScript, not Kotlin
 
-The spec called for the gateway to be in Kotlin (matches DoorDash's primary backend language). I started in Kotlin and hit two issues that ate hours:
+The spec called for the gateway to be in Kotlin (matches the typical "platform-infrastructure-in-a-JVM-language" stack). I started in Kotlin and hit two issues that ate hours:
 
 1. JDK 25 (default Homebrew openjdk) breaks Kotlin 2.0/2.2 — had to pin a JDK 21 toolchain.
 2. The Kotlin SDK's dynamic-dispatch API (`Request.of(Target.X, TypeTag.of, …)`) for calling Restate services by string name (which the gateway needs because tools are TS, not generated Kotlin clients) wasn't documented and took significant trial-and-error to find.
 
-For demo velocity, I switched the gateway to TypeScript. Architecturally identical, demo-wise identical. Worth raising with Vasily as: *"This would naturally be Kotlin in your stack — the architecture is the same; we shipped this demo in TS so everything was one language. Restate has Kotlin SDK ready for the port."*
+For demo velocity, I switched the gateway to TypeScript. Architecturally identical, demo-wise identical. Worth framing as: *"This would naturally be Kotlin (or your platform language) in production — the architecture is the same; we shipped this demo in TS so everything was one language. Restate has Kotlin/Java/Go SDKs ready for the port."*
 
 The original Kotlin scaffold lives in git history if you want to point at it.
 
@@ -326,4 +326,4 @@ If anything in here doesn't match expectations:
 4. **Want a different demo scenario emphasized?** The seed chips in the operator UI are the easy edit point.
 5. **Want this dockerized cleanly?** `docker-compose.yml` is still in the repo; was the original plan; Docker just needs to be reliable in your dev env.
 
-Otherwise, I'd suggest dry-running Scenes 1 → 3 → 5 in that order, since those are the strongest beats. Scenes 2 and 4 are good supporting material if Vasily asks the right questions.
+Otherwise, I'd suggest dry-running Scenes 1 → 3 → 5 in that order, since those are the strongest beats. Scenes 2 and 4 are good supporting material if the audience asks the right questions.

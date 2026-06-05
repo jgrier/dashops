@@ -1,6 +1,8 @@
 # DashOps on Restate
 
-A DoorDash-flavored agent platform demo: an **operator agent** that investigates and corrects operational issues, fronted by an **agent gateway** that owns auth, rate limits, cost attribution, and approval policy. Built on Restate.
+A food-delivery-flavored agent platform demo: an **operator agent** that investigates and corrects operational issues, fronted by an **agent gateway** that owns auth, rate limits, cost attribution, and approval policy. Built on Restate.
+
+![Architecture](architecture.svg)
 
 **For the morning walkthrough, see [DEMO.md](./DEMO.md).** It covers all five demo scenes, talking points, design decisions made overnight, and lessons learned.
 
@@ -54,11 +56,11 @@ Six Restate services, two web UIs, one bridge:
 
 Everything flows through Restate's ingress; every hop is durable.
 
-## What this demonstrates for DoorDash
+## What this demonstrates
 
 - **Durable mesh** — every agent ↔ tool ↔ approval-service ↔ ledger call is journaled in Restate. No retries to write. The Restate UI is the single source of observability across the whole agent path.
 - **Async HITL is a first-class primitive** — `ctx.awakeable()` + resolve from anywhere. The agent invocation can sit suspended for arbitrary time and resume on a different process.
-- **"Queue, don't retry"** — when a tool is rate-limited, the gateway's handler is durably suspended on `ctx.sleep` until tokens are available. Answers the question Vasily raised in the call about who handles retry.
+- **"Queue, don't retry"** — when a tool is rate-limited, the gateway's handler is durably suspended on `ctx.sleep` until tokens are available. No client-side backoff loop anywhere; the same code works for one call or a million.
 - **Pause / patch / replay** — Restate 1.6's default behavior on exhausted retries (`onMaxAttempts: 'pause'`) plus the admin API's `PATCH /invocations/{id}/resume` lets you ship a fix and replay from the failure point. No work redone.
 
 See [DEMO.md](./DEMO.md) for the full walkthrough.
