@@ -23,10 +23,11 @@ register_tool() {
   local serviceName="$2"
   local description="$3"
   local configuredCostCents="$4"
-  echo "  Registering tool: ${toolName} -> ${serviceName}"
+  local perMinute="${5:-60}"     # default rate limit
+  echo "  Registering tool: ${toolName} -> ${serviceName} (${perMinute}/min)"
   curl -fsS -X POST "${INGRESS}/ToolRegistry/default/register" \
     -H 'Content-Type: application/json' \
-    --data "{\"name\":\"${toolName}\",\"serviceName\":\"${serviceName}\",\"handlerName\":\"execute\",\"description\":\"${description}\",\"configuredCostCents\":${configuredCostCents}}" \
+    --data "{\"name\":\"${toolName}\",\"serviceName\":\"${serviceName}\",\"handlerName\":\"execute\",\"description\":\"${description}\",\"configuredCostCents\":${configuredCostCents},\"rateLimit\":{\"perMinute\":${perMinute}}}" \
     > /dev/null
 }
 
@@ -38,11 +39,12 @@ register "guardrails"       9084
 register "approval-service" 9085
 
 echo "== Bootstrapping tool registry =="
-register_tool "delivery_lookup"    "DeliveryLookup"    "Look up a delivery by ID"            0
-register_tool "customer_lookup"    "CustomerLookup"    "Look up a customer profile by ID"    0
-register_tool "escalation_history" "EscalationHistory" "Recent escalations for a delivery"   0
-register_tool "semantic_search"    "SemanticSearch"    "Find similar past complaints"        5
-register_tool "apply_credit"       "ApplyCredit"       "Apply a credit to a customer"        0
-register_tool "customer_outreach"  "CustomerOutreach"  "Send an outreach message to a customer" 0
+register_tool "delivery_lookup"    "DeliveryLookup"    "Look up a delivery by ID"            0  60
+register_tool "customer_lookup"    "CustomerLookup"    "Look up a customer profile by ID"    0  60
+register_tool "escalation_history" "EscalationHistory" "Recent escalations for a delivery"   0  60
+register_tool "semantic_search"    "SemanticSearch"    "Find similar past complaints"        5  30
+register_tool "apply_credit"       "ApplyCredit"       "Apply a credit to a customer"        0  10
+register_tool "customer_outreach"  "CustomerOutreach"  "Send an outreach message"            0  10
+register_tool "merchant_status"    "MerchantStatus"    "Get merchant operational status"     0   6   # tight!
 
 echo "All registered."

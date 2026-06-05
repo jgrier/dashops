@@ -5,6 +5,7 @@ import { escalationHistory } from "./escalation-history.js";
 import { semanticSearch } from "./semantic-search.js";
 import { applyCredit } from "./apply-credit.js";
 import { customerOutreach } from "./customer-outreach.js";
+import { merchantStatus } from "./merchant-status.js";
 
 const port = parseInt(process.env.PORT ?? "9082", 10);
 restate.serve({
@@ -15,6 +16,7 @@ restate.serve({
     semanticSearch,
     applyCredit,
     customerOutreach,
+    merchantStatus,
   ],
   port,
 });

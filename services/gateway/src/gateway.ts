@@ -83,6 +83,45 @@ export const gateway = restate.service({
         }
       }
 
+      // ---- Step 2b: hierarchical rate limits (token buckets)
+      // Skip on approval retry — the original request already paid the
+      // rate-limit cost when it was first attempted.
+      if (!req.approvalToken) {
+        const perTenantTool = registration.rateLimit?.perMinute ?? 60;
+        const buckets: Array<{ key: string; capacity: number; refillRate: number }> = [
+          // Global cap per tool: 60/min protects the downstream from total overwhelm.
+          { key: `global:${req.toolName}`, capacity: 60, refillRate: 60 / 60 },
+          // Per tenant: 120/min ceiling across all tools.
+          { key: `tenant:${req.identity.tenantId}`, capacity: 120, refillRate: 120 / 60 },
+          // Per (tenant, tool): config-driven. This is where merchant_status's
+          // tight 6/min lives (set via the tool registry).
+          {
+            key: `tenant_tool:${req.identity.tenantId}:${req.toolName}`,
+            capacity: perTenantTool,
+            refillRate: perTenantTool / 60,
+          },
+        ];
+
+        type AR = { acquired: boolean; waitMs: number; tokensLeft: number };
+        for (const b of buckets) {
+          // Try up to 2x to avoid pathological loops; durable sleep between.
+          for (let i = 0; i < 5; i++) {
+            const res = await ctx.genericCall<{ tokens: number; capacity: number; refillRate: number }, AR>({
+              service: "TokenBucket",
+              method: "acquire",
+              key: b.key,
+              parameter: { tokens: 1, capacity: b.capacity, refillRate: b.refillRate },
+              inputSerde: restate.serde.json,
+              outputSerde: restate.serde.json,
+              name: `rate-limit · ${b.key}`,
+            });
+            if (res.acquired) break;
+            // Durable sleep — caller is suspended in Restate, not retrying.
+            await ctx.sleep(res.waitMs);
+          }
+        }
+      }
+
       // ---- Step 3: approval policy
       const policy = policies[req.toolName];
       const callFingerprint = fingerprint(req.toolName, req.params);

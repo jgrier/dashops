@@ -28,13 +28,68 @@ export function planNext(messages: SessionMessage[]): LLMStep {
 
   const text = lastUser.content;
   const deliveryMatch = text.match(/delivery\s*#?(\d+)/i);
-  const searchHint = /\b(find|search|similar|complaints?)\b/i.test(text) && !deliveryMatch;
+  const merchantBatchMatch = text.match(/merchants?\s+for\s+deliveries?\s+([\d,\s]+)/i);
+  const searchHint = /\b(find|search|similar|complaints?)\b/i.test(text) && !deliveryMatch && !merchantBatchMatch;
   const actionHint =
     /\b(apolog(?:ize|y)|credit|outreach|refund)\b/i.test(text) ||
     /\$\d+(\.\d+)?/.test(text) ||
     /\b\d+\s*dollars?\b/i.test(text);
   const creditAmountMatch =
     text.match(/\$(\d+(?:\.\d{1,2})?)/) ?? text.match(/(\d+(?:\.\d{1,2})?)\s*dollars?/i);
+
+  // -- Merchant-batch flow (Scene 4 rate-limit demo) ------------------------
+  // "check merchants for deliveries 12345, 12346, 12399, ..." — fires many
+  // merchant_status calls in sequence; the tight per-tenant-tool bucket
+  // forces later calls into durable sleep at the gateway.
+  if (merchantBatchMatch) {
+    const ids = merchantBatchMatch[1]
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const merchantIdForDelivery: Record<string, string> = {
+      "12345": "M-44",
+      "12346": "M-08",
+      "12399": "M-21",
+    };
+    const merchantIds = ids.map((d) => merchantIdForDelivery[d]).filter(Boolean);
+
+    const calledCount = stepsSince.filter((m) => m.toolName === "merchant_status").length;
+    if (calledCount < merchantIds.length) {
+      const next = merchantIds[calledCount];
+      return {
+        thought:
+          calledCount === 0
+            ? `Pulling merchant status for ${merchantIds.length} merchants in sequence.`
+            : `Continuing — merchant ${next}.`,
+        next: {
+          type: "tool_call",
+          tool: "merchant_status",
+          params: { merchant_id: next },
+        },
+      };
+    }
+
+    // All done
+    const statuses = stepsSince
+      .filter((m) => m.toolName === "merchant_status")
+      .map((m) => m.toolResult);
+    return {
+      thought: `Got all merchant statuses. Summarizing.`,
+      next: {
+        type: "final",
+        reply:
+          `Merchant status for ${ids.length} deliveries:\n\n` +
+          statuses
+            .map(
+              (s, i) =>
+                `• delivery ${ids[i]} → ${(s as any).merchantId}: ${
+                  (s as any).open ? `OPEN (lag ${(s as any).kitchenLagMin}m)` : "CLOSED"
+                }`
+            )
+            .join("\n"),
+      },
+    };
+  }
 
   // -- Search-for-similar-complaints flow -----------------------------------
   if (searchHint) {
