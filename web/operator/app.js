@@ -1,15 +1,21 @@
 // Vanilla JS for the operator UI. No bundler, no framework.
-// Polls the session state at ~300ms while a turn is in flight.
 
-const sessionId = (() => {
-  const k = "dashops_session_id";
-  let s = localStorage.getItem(k);
+const SESSION_KEY = "dashops_session_id";
+
+function freshSessionId() {
+  return "sess-" + Math.random().toString(36).slice(2, 10);
+}
+
+function loadOrCreateSessionId() {
+  let s = localStorage.getItem(SESSION_KEY);
   if (!s) {
-    s = "sess-" + Math.random().toString(36).slice(2, 10);
-    localStorage.setItem(k, s);
+    s = freshSessionId();
+    localStorage.setItem(SESSION_KEY, s);
   }
   return s;
-})();
+}
+
+let sessionId = loadOrCreateSessionId();
 
 document.getElementById("session-id-badge").textContent = "session: " + sessionId;
 
@@ -18,9 +24,8 @@ const statusEl = document.getElementById("status");
 const statusTextEl = document.getElementById("status-text");
 const inputEl = document.getElementById("input");
 const formEl = document.getElementById("input-form");
+const newSessionBtn = document.getElementById("new-session-btn");
 
-let lastMessageCount = 0;
-let pollHandle = null;
 let renderedMessageIds = new Set();
 
 formEl.addEventListener("submit", (e) => {
@@ -28,7 +33,39 @@ formEl.addEventListener("submit", (e) => {
   const msg = inputEl.value.trim();
   if (!msg) return;
   inputEl.value = "";
+
+  // Render the user's message IMMEDIATELY so the UI feels responsive.
+  // The polling loop will reconcile when the real one comes back.
+  const optimisticId = "optimistic-" + Date.now();
+  renderedMessageIds.add(optimisticId);
+  messagesEl.appendChild(
+    renderMessage({
+      id: optimisticId,
+      role: "user",
+      content: msg,
+      timestampMs: Date.now(),
+    })
+  );
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
   sendMessage(msg);
+});
+
+newSessionBtn.addEventListener("click", async () => {
+  // Reset the server side (clears VO state); generate a fresh session_id
+  // locally; rewipe the UI.
+  try {
+    await fetch(`/api/sessions/${sessionId}/reset`, { method: "POST" });
+  } catch {}
+  sessionId = freshSessionId();
+  localStorage.setItem(SESSION_KEY, sessionId);
+  document.getElementById("session-id-badge").textContent = "session: " + sessionId;
+  renderedMessageIds = new Set();
+  messagesEl.innerHTML = "";
+  document.getElementById("pending-banner").style.display = "none";
+  statusEl.className = "status idle";
+  statusTextEl.textContent = "idle";
+  inputEl.focus();
 });
 
 document.querySelectorAll(".seed-chip").forEach((chip) => {
@@ -39,23 +76,22 @@ document.querySelectorAll(".seed-chip").forEach((chip) => {
 });
 
 async function sendMessage(msg) {
-  await fetch(`/api/sessions/${sessionId}/messages`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message: msg }),
-  });
-  startPolling();
-}
-
-function startPolling() {
-  if (pollHandle) return;
-  pollHandle = setInterval(pollOnce, 300);
-}
-
-function stopPolling() {
-  if (pollHandle) {
-    clearInterval(pollHandle);
-    pollHandle = null;
+  try {
+    await fetch(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: msg }),
+    });
+  } catch (e) {
+    // surface a system-style note if the bridge is down
+    messagesEl.appendChild(
+      renderMessage({
+        id: "err-" + Date.now(),
+        role: "system",
+        content: "Failed to send: " + (e && e.message ? e.message : String(e)),
+        timestampMs: Date.now(),
+      })
+    );
   }
 }
 
@@ -65,18 +101,10 @@ async function pollOnce() {
     if (!r.ok) return;
     const state = await r.json();
     render(state);
-    if (state.status === "complete" || state.status === "failed") {
-      stopPolling();
-    }
-    // keep polling while waiting on approval — the resolution will eventually push status forward
   } catch (e) {
     // ignore transient errors
   }
 }
-
-// Always poll periodically — even when no message is pending, in case an
-// approval was just granted on the approver side and the agent is mid-resume.
-setInterval(pollOnce, 1500);
 
 function render(state) {
   // status
@@ -93,9 +121,25 @@ function render(state) {
     banner.style.display = "none";
   }
 
-  // messages — append new ones only
-  for (const m of state.messages || []) {
+  // messages — append new ones only. Reconcile optimistic renders by
+  // matching the latest user message: if our server-side echo arrives
+  // and we still have an optimistic version of the same content, drop
+  // the optimistic one so we don't double-render.
+  const serverMessages = state.messages || [];
+  for (const m of serverMessages) {
     if (renderedMessageIds.has(m.id)) continue;
+    if (m.role === "user") {
+      // remove any optimistic user message with matching content
+      const optimisticNodes = messagesEl.querySelectorAll(".msg.user");
+      for (const node of optimisticNodes) {
+        if (
+          node.dataset.optimistic === "1" &&
+          node.dataset.content === m.content
+        ) {
+          node.remove();
+        }
+      }
+    }
     renderedMessageIds.add(m.id);
     messagesEl.appendChild(renderMessage(m));
   }
@@ -105,6 +149,10 @@ function render(state) {
 function renderMessage(m) {
   const div = document.createElement("div");
   div.className = "msg " + m.role;
+  if (m.id && m.id.startsWith("optimistic-")) {
+    div.dataset.optimistic = "1";
+    div.dataset.content = m.content;
+  }
   const roleLine = document.createElement("div");
   roleLine.className = "role";
   let roleText = m.role;
@@ -131,5 +179,5 @@ function renderMessage(m) {
   return div;
 }
 
-// On load, render whatever is in the session already.
 pollOnce();
+setInterval(pollOnce, 800);
