@@ -1,0 +1,12 @@
+services:
+  restate:
+    image: docker.restate.dev/restatedev/restate:1.6.2
+    container_name: dashops_restate
+    ports:
+      - "8080:8080"   # ingress: HTTP into the cluster
+      - "9070:9070"   # admin + Web UI
+      - "9071:9071"   # metadata service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./restate-data:/restate-data

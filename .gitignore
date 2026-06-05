@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.gradle/
+.idea/
+.vscode/
+*.log
+restate-data/
+.DS_Store
+.env
+.env.local
