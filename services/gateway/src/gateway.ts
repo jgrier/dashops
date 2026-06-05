@@ -44,7 +44,46 @@ export const gateway = restate.service({
         };
       }
 
-      // Step 3: identity is on the request; build the downstream payload
+      // Step 3 (Phase 2): PII guardrail — inspect outbound params before dispatch.
+      type PIIResp = { flagged: boolean; reason?: string; detected?: unknown; costCents: number };
+      const piiResp = await ctx.genericCall<{ params: Record<string, unknown>; toolName: string }, PIIResp>({
+        service: "PIIGuardrail",
+        method: "check",
+        parameter: { params: req.params, toolName: req.toolName },
+        inputSerde: restate.serde.json,
+        outputSerde: restate.serde.json,
+        name: "guardrail · PII",
+      });
+
+      // Record guardrail cost in the tenant ledger (even when not flagged).
+      if (piiResp.costCents > 0) {
+        ctx.genericSend<CostEntry>({
+          service: "CostLedger",
+          method: "record",
+          key: req.identity.tenantId,
+          parameter: {
+            toolName: "guardrail:pii",
+            costCents: piiResp.costCents,
+            timestampMs: Date.now(),
+            sessionId: req.identity.sessionId,
+          },
+          inputSerde: restate.serde.json,
+        });
+      }
+
+      if (piiResp.flagged) {
+        return {
+          status: "blocked",
+          toolName: req.toolName,
+          blocked: {
+            source: "pii-guardrail",
+            message: piiResp.reason ?? "PII detected",
+            details: piiResp.detected,
+          },
+        };
+      }
+
+      // Step 6: identity is on the request; build the downstream payload
       const payload: ToolPayload = { params: req.params, identity: req.identity };
 
       // Step 4: dispatch to the downstream tool

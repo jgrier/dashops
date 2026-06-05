@@ -5,7 +5,7 @@ set -euo pipefail
 
 ADMIN="${ADMIN:-http://localhost:9070}"
 INGRESS="${INGRESS:-http://localhost:8080}"
-HOST="${HOST:-host.docker.internal}"
+HOST="${HOST:-localhost}"
 
 register() {
   local name="$1"
@@ -31,13 +31,15 @@ register_tool() {
 }
 
 echo "== Registering deployments =="
-register "gateway"   9080
-register "tools"     9082
-register "ops-agent" 9083
+register "gateway"    9080
+register "tools"      9082
+register "ops-agent"  9083
+register "guardrails" 9084
 
 echo "== Bootstrapping tool registry =="
 register_tool "delivery_lookup"    "DeliveryLookup"    "Look up a delivery by ID"           0
 register_tool "customer_lookup"    "CustomerLookup"    "Look up a customer profile by ID"   0
 register_tool "escalation_history" "EscalationHistory" "Recent escalations for a delivery"  0
+register_tool "semantic_search"    "SemanticSearch"    "Find similar past complaints"       5
 
 echo "All registered."

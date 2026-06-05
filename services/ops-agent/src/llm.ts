@@ -28,6 +28,37 @@ export function planNext(messages: SessionMessage[]): LLMStep {
 
   const text = lastUser.content;
   const deliveryMatch = text.match(/delivery\s*#?(\d+)/i);
+  const searchHint = /\b(find|search|similar|complaints?)\b/i.test(text) && !deliveryMatch;
+
+  // -- Search-for-similar-complaints flow -----------------------------------
+  if (searchHint) {
+    if (!calledTools.includes("semantic_search")) {
+      return {
+        thought: `Let me search for similar past complaints.`,
+        next: {
+          type: "tool_call",
+          tool: "semantic_search",
+          // Drop the raw user text into the query — this is the Phase 2 PII demo:
+          // if the operator's question contains a phone number etc., the guardrail
+          // will flag it here.
+          params: { query: text },
+        },
+      };
+    }
+    const searchResult = stepsSince.find((m) => m.toolName === "semantic_search")
+      ?.toolResult as Record<string, unknown> | undefined;
+    return {
+      thought: `Summarizing what I found.`,
+      next: {
+        type: "final",
+        reply: searchResult
+          ? `Found ${(searchResult as any).count} similar complaints. Top match: delivery #${
+              ((searchResult as any).results?.[0] ?? {}).deliveryId
+            } — ${((searchResult as any).results?.[0] ?? {}).summary}.`
+          : "No results.",
+      },
+    };
+  }
 
   // -- Investigate-a-delivery flow ------------------------------------------
   if (deliveryMatch) {
