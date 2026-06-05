@@ -2,8 +2,14 @@ import * as restate from "@restatedev/restate-sdk";
 import type { ToolPayload, ToolResult } from "@dashops/shared";
 
 // Action tool. Approval-gated by gateway policy (amount > $10 → finance-leads).
-// Phase 5: a deliberately-buggy v1 will reject non-whole-dollar amounts to
-// drive the patch-and-replay failure scenario; for Phase 3 we run "clean".
+//
+// Phase 5: when env BUGGY_MODE=1, the v1 implementation has a deliberate bug
+// that rejects non-whole-dollar amounts. The error is RETRYABLE (plain Error,
+// not TerminalError), and the service is configured with maxAttempts=3 and
+// onMaxAttempts=pause — so Restate retries 3x, then pauses the invocation.
+// The paused invocation is what we resume after restarting the tool with
+// BUGGY_MODE off, demonstrating Stephan's pitch:
+//   'take a failed invocation, inject a patch, resume from exactly that point'.
 export const applyCredit = restate.service({
   name: "ApplyCredit",
   handlers: {
@@ -15,16 +21,14 @@ export const applyCredit = restate.service({
       const amountCents = Number(payload.params.amount_cents ?? 0);
       const reason = String(payload.params.reason ?? "");
 
-      // Phase 5 will toggle this on with BUGGY_MODE=1.
       if (process.env.BUGGY_MODE === "1" && amountCents % 100 !== 0) {
-        throw new restate.TerminalError(
-          `amount_cents must be a multiple of 100 (got ${amountCents})`,
-          { errorCode: 400 }
+        // Retryable: plain Error. Restate will retry per the policy below;
+        // after retries exhaust, the invocation pauses (per service options).
+        throw new Error(
+          `amount_cents must be a multiple of 100 (got ${amountCents})`
         );
       }
 
-      // Side-effect: pretend to apply a credit to the customer's account.
-      // ctx.run journals the result so retries don't double-apply.
       const credit = await ctx.run("apply credit to customer account", () => ({
         applied: true,
         customerId,
@@ -35,6 +39,12 @@ export const applyCredit = restate.service({
       }));
 
       return { result: credit, costCents: 0 };
+    },
+  },
+  options: {
+    retryPolicy: {
+      maxAttempts: 3,
+      onMaxAttempts: "pause",
     },
   },
 });
