@@ -12,6 +12,9 @@ export interface CallToolRequest {
   toolName: string;
   params: Record<string, unknown>;
   identity: CallerIdentity;
+  // Set on the retry call after an approval has been granted. Gateway
+  // verifies this against the ApprovalService and skips the policy check.
+  approvalToken?: string;
 }
 
 export interface CallToolResponse {
@@ -85,8 +88,49 @@ export interface SessionState {
     approvalId: string;
     actionSummary: string;
     approverGroup: string;
+    toolName: string;
   };
   failureReason?: string;
   createdAtMs: number;
   updatedAtMs: number;
+}
+
+// ----- Approval service contracts --------------------------------------------
+
+export interface ApprovalRequestPayload {
+  awakeableId: string;
+  approverGroup: string;
+  actionSummary: string;
+  actionFingerprint: string;
+  toolName: string;
+  toolParams: Record<string, unknown>;
+  initiator: CallerIdentity;
+}
+
+export interface ApprovalDecision {
+  approved: boolean;
+  comment?: string;
+  approverUserId?: string;
+}
+
+export interface ApprovalRecord {
+  approvalId: string;
+  status: "pending" | "approved" | "rejected" | "cancelled" | "timeout";
+  approverGroup: string;
+  actionSummary: string;
+  actionFingerprint: string;
+  toolName: string;
+  toolParams: Record<string, unknown>;
+  initiator: CallerIdentity;
+  decision?: ApprovalDecision;
+  createdAtMs: number;
+  decidedAtMs?: number;
+}
+
+export interface PendingApprovalSummary {
+  approvalId: string;
+  actionSummary: string;
+  initiator: { userId: string; sessionId: string };
+  createdAtMs: number;
+  toolName: string;
 }

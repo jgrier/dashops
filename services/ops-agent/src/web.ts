@@ -5,16 +5,19 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Walk up from services/ops-agent/src/web.ts (or dist/) to repo root, then web/operator
-const WEB_ROOT = path.resolve(__dirname, "..", "..", "..", "web", "operator");
+const WEB_ROOT = path.resolve(__dirname, "..", "..", "..", "web");
 
 const RESTATE_INGRESS = process.env.RESTATE_INGRESS ?? "http://localhost:8080";
 
 // ---------------------------------------------------------------------------
-// Web bridge: serves the operator UI, proxies its HTTP calls to Restate
-// ingress. Two endpoints matter:
-//   POST /api/sessions/:id/messages   — fire-and-forget message to the agent
-//   GET  /api/sessions/:id            — fetch current session state
+// Web bridge: serves the operator + approver UIs and proxies their HTTP
+// calls to the Restate ingress.
+//   POST /api/sessions/:id/messages       — fire-and-forget message to agent
+//   GET  /api/sessions/:id                — fetch session state
+//   POST /api/sessions/:id/reset          — wipe session
+//   GET  /api/approvals/pending?group=X   — list pending approvals for a group
+//   GET  /api/approvals/:id               — fetch one approval record
+//   POST /api/approvals/:id/respond       — approve or reject
 // ---------------------------------------------------------------------------
 
 export function startWebBridge(port: number): void {
@@ -29,7 +32,9 @@ export function startWebBridge(port: number): void {
     }
   });
   server.listen(port, () => {
-    console.log(`Operator UI bridge listening on http://localhost:${port}`);
+    console.log(`Web bridge listening on http://localhost:${port}`);
+    console.log(`  operator: http://localhost:${port}/operator`);
+    console.log(`  approver: http://localhost:${port}/approver`);
   });
 }
 
@@ -37,13 +42,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? "/", `http://localhost`);
   const pathname = url.pathname;
 
-  // API: send a message
+  // ---- session APIs ----
   const sendMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
   if (sendMatch && req.method === "POST") {
     const sessionId = decodeURIComponent(sendMatch[1]);
     const body = await readBody(req);
     const { message } = JSON.parse(body);
-    // Async send so the HTTP call returns immediately; agent runs in background.
     const r = await fetch(
       `${RESTATE_INGRESS}/Session/${encodeURIComponent(sessionId)}/sendMessage/send`,
       {
@@ -52,31 +56,19 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         body: JSON.stringify(message),
       }
     );
-    res.statusCode = r.status;
-    res.setHeader("content-type", "application/json");
-    res.end(await r.text());
-    return;
+    return relay(r, res);
   }
 
-  // API: get session state
   const stateMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/);
   if (stateMatch && req.method === "GET") {
     const sessionId = decodeURIComponent(stateMatch[1]);
     const r = await fetch(
       `${RESTATE_INGRESS}/Session/${encodeURIComponent(sessionId)}/getState`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      }
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }
     );
-    res.statusCode = r.status;
-    res.setHeader("content-type", "application/json");
-    res.end(await r.text());
-    return;
+    return relay(r, res);
   }
 
-  // API: reset
   const resetMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/reset$/);
   if (resetMatch && req.method === "POST") {
     const sessionId = decodeURIComponent(resetMatch[1]);
@@ -84,19 +76,63 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       `${RESTATE_INGRESS}/Session/${encodeURIComponent(sessionId)}/reset`,
       { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }
     );
-    res.statusCode = r.status;
-    res.setHeader("content-type", "application/json");
-    res.end(await r.text());
-    return;
+    return relay(r, res);
   }
 
-  // Static file serving
-  await serveStatic(pathname, res);
+  // ---- approval APIs ----
+  if (pathname === "/api/approvals/pending" && req.method === "GET") {
+    const group = url.searchParams.get("group") ?? "finance-leads";
+    const r = await fetch(
+      `${RESTATE_INGRESS}/PendingApprovalsIndex/${encodeURIComponent(group)}/list`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }
+    );
+    return relay(r, res);
+  }
+
+  const respondMatch = pathname.match(/^\/api\/approvals\/([^/]+)\/respond$/);
+  if (respondMatch && req.method === "POST") {
+    const approvalId = decodeURIComponent(respondMatch[1]);
+    const body = await readBody(req);
+    const r = await fetch(
+      `${RESTATE_INGRESS}/ApprovalService/${encodeURIComponent(approvalId)}/respond`,
+      { method: "POST", headers: { "content-type": "application/json" }, body }
+    );
+    return relay(r, res);
+  }
+
+  const approvalGetMatch = pathname.match(/^\/api\/approvals\/([^/]+)$/);
+  if (approvalGetMatch && req.method === "GET") {
+    const approvalId = decodeURIComponent(approvalGetMatch[1]);
+    const r = await fetch(
+      `${RESTATE_INGRESS}/ApprovalService/${encodeURIComponent(approvalId)}/getRecord`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }
+    );
+    return relay(r, res);
+  }
+
+  // ---- static ----
+  // Root → operator UI
+  if (pathname === "/") {
+    return serveStatic("/operator/index.html", res);
+  }
+  // /operator and /approver may come with or without trailing slash
+  if (pathname === "/operator" || pathname === "/operator/") {
+    return serveStatic("/operator/index.html", res);
+  }
+  if (pathname === "/approver" || pathname === "/approver/") {
+    return serveStatic("/approver/index.html", res);
+  }
+  return serveStatic(pathname, res);
+}
+
+async function relay(r: Response, res: http.ServerResponse) {
+  res.statusCode = r.status;
+  res.setHeader("content-type", "application/json");
+  res.end(await r.text());
 }
 
 async function serveStatic(pathname: string, res: http.ServerResponse) {
-  const safePath = pathname === "/" ? "/index.html" : pathname;
-  const filePath = path.join(WEB_ROOT, safePath);
+  const filePath = path.join(WEB_ROOT, pathname);
   if (!filePath.startsWith(WEB_ROOT)) {
     res.statusCode = 403;
     res.end("forbidden");
@@ -115,7 +151,7 @@ async function serveStatic(pathname: string, res: http.ServerResponse) {
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    let chunks: Buffer[] = [];
+    const chunks: Buffer[] = [];
     req.on("data", (c) => chunks.push(c));
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);

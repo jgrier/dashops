@@ -29,6 +29,12 @@ export function planNext(messages: SessionMessage[]): LLMStep {
   const text = lastUser.content;
   const deliveryMatch = text.match(/delivery\s*#?(\d+)/i);
   const searchHint = /\b(find|search|similar|complaints?)\b/i.test(text) && !deliveryMatch;
+  const actionHint =
+    /\b(apolog(?:ize|y)|credit|outreach|refund)\b/i.test(text) ||
+    /\$\d+(\.\d+)?/.test(text) ||
+    /\b\d+\s*dollars?\b/i.test(text);
+  const creditAmountMatch =
+    text.match(/\$(\d+(?:\.\d{1,2})?)/) ?? text.match(/(\d+(?:\.\d{1,2})?)\s*dollars?/i);
 
   // -- Search-for-similar-complaints flow -----------------------------------
   if (searchHint) {
@@ -92,12 +98,66 @@ export function planNext(messages: SessionMessage[]): LLMStep {
       };
     }
 
-    // Synthesize.
+    // Action mode: apply credit + send outreach
     const delivery = deliveryResult as Record<string, unknown> | undefined;
-    const escalation = stepsSince.find((m) => m.toolName === "escalation_history")
-      ?.toolResult as Record<string, unknown> | undefined;
     const customer = stepsSince.find((m) => m.toolName === "customer_lookup")
       ?.toolResult as Record<string, unknown> | undefined;
+    const escalation = stepsSince.find((m) => m.toolName === "escalation_history")
+      ?.toolResult as Record<string, unknown> | undefined;
+
+    if (actionHint && customer && !calledTools.includes("apply_credit")) {
+      const amountCents = creditAmountMatch
+        ? Math.round(parseFloat(creditAmountMatch[1]) * 100)
+        : 2000;                                                  // default $20
+      return {
+        thought: `Applying a $${(amountCents / 100).toFixed(2)} credit to ${
+          (customer as any).name
+        } given the unresolved escalation.`,
+        next: {
+          type: "tool_call",
+          tool: "apply_credit",
+          params: {
+            customer_id: (customer as any).customerId,
+            amount_cents: amountCents,
+            reason: `compensation for delivery #${deliveryId} (3 prior escalations, unsatisfied)`,
+          },
+        },
+      };
+    }
+
+    if (actionHint && customer && !calledTools.includes("customer_outreach")) {
+      return {
+        thought: `Sending the apology message to the customer.`,
+        next: {
+          type: "tool_call",
+          tool: "customer_outreach",
+          params: {
+            customer_id: (customer as any).customerId,
+            template: "apology_with_credit",
+            template_params: { delivery_id: deliveryId },
+          },
+        },
+      };
+    }
+
+    // Synthesize: insight mode (no action requested)
+    if (actionHint) {
+      const credit = stepsSince.find((m) => m.toolName === "apply_credit")
+        ?.toolResult as Record<string, unknown> | undefined;
+      const outreach = stepsSince.find((m) => m.toolName === "customer_outreach")
+        ?.toolResult as Record<string, unknown> | undefined;
+      return {
+        thought: `Done. Wrapping up.`,
+        next: {
+          type: "final",
+          reply: `**Action complete for delivery #${deliveryId}.**\n\n${
+            credit ? `• Credited $${(((credit as any).amountCents ?? 0) / 100).toFixed(2)} to ${(customer as any)?.name ?? "the customer"} (credit id ${(credit as any).creditId}).\n` : ""
+          }${
+            outreach ? `• Sent apology_with_credit message (id ${(outreach as any).messageId}).\n` : ""
+          }`,
+        },
+      };
+    }
 
     return {
       thought: `I have what I need. Putting the summary together.`,

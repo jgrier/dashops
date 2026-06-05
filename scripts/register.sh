@@ -31,15 +31,18 @@ register_tool() {
 }
 
 echo "== Registering deployments =="
-register "gateway"    9080
-register "tools"      9082
-register "ops-agent"  9083
-register "guardrails" 9084
+register "gateway"          9080
+register "tools"            9082
+register "ops-agent"        9083
+register "guardrails"       9084
+register "approval-service" 9085
 
 echo "== Bootstrapping tool registry =="
-register_tool "delivery_lookup"    "DeliveryLookup"    "Look up a delivery by ID"           0
-register_tool "customer_lookup"    "CustomerLookup"    "Look up a customer profile by ID"   0
-register_tool "escalation_history" "EscalationHistory" "Recent escalations for a delivery"  0
-register_tool "semantic_search"    "SemanticSearch"    "Find similar past complaints"       5
+register_tool "delivery_lookup"    "DeliveryLookup"    "Look up a delivery by ID"            0
+register_tool "customer_lookup"    "CustomerLookup"    "Look up a customer profile by ID"    0
+register_tool "escalation_history" "EscalationHistory" "Recent escalations for a delivery"   0
+register_tool "semantic_search"    "SemanticSearch"    "Find similar past complaints"        5
+register_tool "apply_credit"       "ApplyCredit"       "Apply a credit to a customer"        0
+register_tool "customer_outreach"  "CustomerOutreach"  "Send an outreach message to a customer" 0
 
 echo "All registered."

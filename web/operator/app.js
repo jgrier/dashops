@@ -68,15 +68,30 @@ async function pollOnce() {
     if (state.status === "complete" || state.status === "failed") {
       stopPolling();
     }
+    // keep polling while waiting on approval — the resolution will eventually push status forward
   } catch (e) {
     // ignore transient errors
   }
 }
 
+// Always poll periodically — even when no message is pending, in case an
+// approval was just granted on the approver side and the agent is mid-resume.
+setInterval(pollOnce, 1500);
+
 function render(state) {
   // status
   statusEl.className = "status " + state.status;
   statusTextEl.textContent = state.status;
+
+  // pending approval banner
+  const banner = document.getElementById("pending-banner");
+  if (state.pendingApproval) {
+    banner.style.display = "block";
+    document.getElementById("pending-group").textContent = state.pendingApproval.approverGroup;
+    document.getElementById("pending-summary").textContent = state.pendingApproval.actionSummary;
+  } else {
+    banner.style.display = "none";
+  }
 
   // messages — append new ones only
   for (const m of state.messages || []) {

@@ -180,6 +180,10 @@
     <span class="status idle" id="status"><span class="dot"></span><span id="status-text">idle</span></span>
   </header>
 
+  <div id="pending-banner" style="display:none; padding:10px 20px; background:#3a2a05; color:#ffd28e; font-size:13px; border-bottom:1px solid #4a3a15;">
+    <strong>⏸ Waiting on approval</strong> from <span id="pending-group"></span>: <span id="pending-summary"></span>
+  </div>
+
   <main id="messages"></main>
 
   <footer>
@@ -189,8 +193,10 @@
     </form>
     <div class="seed-chips">
       <span class="seed-chip" data-seed="What happened with delivery #12345?">What happened with delivery #12345?</span>
-      <span class="seed-chip" data-seed="Investigate delivery #12399">Investigate delivery #12399</span>
-      <span class="seed-chip" data-seed="Check on delivery #12346">Check on delivery #12346</span>
+      <span class="seed-chip" data-seed="Apologize and credit $20 to the customer of delivery #12345">Apologize + $20 credit (delivery #12345)</span>
+      <span class="seed-chip" data-seed="Apologize and credit $5 to the customer of delivery #12346">Apologize + $5 (no approval needed)</span>
+      <span class="seed-chip" data-seed="find similar complaints about cold food">Find similar complaints</span>
+      <span class="seed-chip" data-seed="find similar complaints from customer at 555-867-5309">Find complaints (PII)</span>
     </div>
   </footer>
 

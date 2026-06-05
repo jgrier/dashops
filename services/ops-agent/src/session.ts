@@ -16,7 +16,7 @@ export const session = restate.object({
       const sessionId = ctx.key;
       const initialized = (await ctx.get<number>("createdAtMs")) !== null;
       if (!initialized) {
-        ctx.set("createdAtMs", Date.now());
+        ctx.set("createdAtMs", await ctx.date.now());
         ctx.set("messages", [] as SessionMessage[]);
       }
 
@@ -24,7 +24,7 @@ export const session = restate.object({
         id: ctx.rand.uuidv4(),
         role: "user",
         content: message,
-        timestampMs: Date.now(),
+        timestampMs: await ctx.date.now(),
       });
 
       const identity: CallerIdentity = {
@@ -48,9 +48,10 @@ export const session = restate.object({
           sessionId: ctx.key,
           status: ((await ctx.get<SessionStatus>("status")) ?? "idle"),
           messages: (await ctx.get<SessionMessage[]>("messages")) ?? [],
+          pendingApproval: (await ctx.get("pendingApproval")) as SessionState["pendingApproval"],
           failureReason: (await ctx.get<string>("failureReason")) ?? undefined,
-          createdAtMs: (await ctx.get<number>("createdAtMs")) ?? Date.now(),
-          updatedAtMs: (await ctx.get<number>("updatedAtMs")) ?? Date.now(),
+          createdAtMs: (await ctx.get<number>("createdAtMs")) ?? 0,
+          updatedAtMs: (await ctx.get<number>("updatedAtMs")) ?? 0,
         };
       }
     ),

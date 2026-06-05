@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DashOps · Approver</title>
+  <style>
+    :root {
+      --bg:        #0e1116;
+      --surface:   #161b22;
+      --surface-2: #1f262e;
+      --border:    #2a3038;
+      --fg:        #e6edf3;
+      --fg-muted:  #9ba6b3;
+      --accent:    #4dd478;
+      --danger:    #f55b35;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+    }
+    header {
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    header .badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--fg-muted);
+    }
+    header select {
+      margin-left: auto;
+      background: var(--surface-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 5px 10px;
+      font-size: 13px;
+    }
+    main {
+      padding: 20px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .empty {
+      text-align: center;
+      color: var(--fg-muted);
+      font-size: 14px;
+      padding: 60px 20px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      margin-top: 24px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+    }
+    .card .meta {
+      display: flex;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--fg-muted);
+      margin-bottom: 8px;
+    }
+    .card .summary {
+      font-size: 15px;
+      line-height: 1.4;
+      margin: 4px 0 14px 0;
+    }
+    .card .tool-chip {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--surface-2);
+      border-radius: 10px;
+      color: var(--fg-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+    .input {
+      flex: 1;
+      background: var(--surface-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.approve { background: var(--accent); color: #0e1116; }
+    button.reject  { background: var(--danger); color: #fff; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--fg);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DashOps</h1>
+    <span class="badge">approver</span>
+    <span class="badge" id="user-badge">user: -</span>
+    <select id="group-select">
+      <option value="finance-leads">finance-leads</option>
+      <option value="ops-managers">ops-managers</option>
+    </select>
+  </header>
+
+  <main id="content"></main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/approver/app.js"></script>
+</body>
+</html>
