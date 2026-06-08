@@ -224,6 +224,7 @@ code { font-family: ui-monospace, monospace; color: var(--chip-fg); }
   <a href="/operator">operator</a>
   <a href="/approver">approver</a>
   <a href="/services" class="active">services</a>
+  <a href="http://localhost:3001/">supervisor</a>
 </div>
 <div class="container">
   <h1>DashOps services</h1>
