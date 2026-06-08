@@ -1,5 +1,5 @@
 {
-  "name": "@dashops/tools",
+  "name": "@dashops/delivery-svc",
   "version": "0.1.0",
   "private": true,
   "type": "module",

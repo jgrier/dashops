@@ -22,8 +22,6 @@ export const applyCredit = restate.service({
       const reason = String(payload.params.reason ?? "");
 
       if (process.env.BUGGY_MODE === "1" && amountCents % 100 !== 0) {
-        // Retryable: plain Error. Restate will retry per the policy below;
-        // after retries exhaust, the invocation pauses (per service options).
         throw new Error(
           `amount_cents must be a multiple of 100 (got ${amountCents})`
         );

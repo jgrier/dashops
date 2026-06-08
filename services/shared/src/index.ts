@@ -169,3 +169,5 @@ export interface PendingApprovalSummary {
   toolName: string;
   kind?: "approval" | "appeal";
 }
+
+export { selfRegisterTools } from "./self-register.js";

@@ -12,7 +12,9 @@
     "restate:logs": "docker compose logs -f restate",
     "register": "bash scripts/register.sh",
     "dev:gateway": "npm --workspace=@dashops/gateway run dev",
-    "dev:tools": "npm --workspace=@dashops/tools run dev",
+    "dev:delivery": "npm --workspace=@dashops/delivery-svc run dev",
+    "dev:customer": "npm --workspace=@dashops/customer-svc run dev",
+    "dev:insights": "npm --workspace=@dashops/insights-svc run dev",
     "dev:ops": "npm --workspace=@dashops/ops-agent run dev"
   },
   "engines": {

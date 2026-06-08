@@ -33,20 +33,24 @@ fi
 
 echo "== Bringing up services =="
 is_listening 9080 || start_svc gateway          "$ROOT/services/gateway"
-is_listening 9082 || start_svc tools            "$ROOT/services/tools"          "${TOOLS_ENV:-}"
+is_listening 9081 || start_svc delivery-svc     "$ROOT/services/delivery-svc"
+is_listening 9082 || start_svc customer-svc     "$ROOT/services/customer-svc"   "${TOOLS_ENV:-}"
 is_listening 9083 || start_svc ops-agent        "$ROOT/services/ops-agent"
 is_listening 9084 || start_svc guardrails       "$ROOT/services/guardrails"
 is_listening 9085 || start_svc approval-service "$ROOT/services/approval-service"
+is_listening 9086 || start_svc insights-svc     "$ROOT/services/insights-svc"
 
 echo "== Waiting for services to listen =="
-for port in 9080 9082 9083 9084 9085; do
+for port in 9080 9081 9082 9083 9084 9085 9086; do
   for i in 1 2 3 4 5 6 7 8 9 10; do
     if is_listening "$port"; then break; fi
     sleep 1
   done
 done
 
-echo "== Registering deployments and tools =="
+echo "== Registering deployments =="
+# Tool services self-register their tools at startup; we only need to
+# register Restate-side deployments here.
 sleep 1
 bash "$ROOT/scripts/register.sh"
 
@@ -61,8 +65,10 @@ All up.
 Logs:
   tail -f /tmp/dashops-restate.log
   tail -f /tmp/dashops-gateway.log
-  tail -f /tmp/dashops-tools.log
+  tail -f /tmp/dashops-delivery-svc.log
+  tail -f /tmp/dashops-customer-svc.log
   tail -f /tmp/dashops-ops-agent.log
   tail -f /tmp/dashops-guardrails.log
   tail -f /tmp/dashops-approval-service.log
+  tail -f /tmp/dashops-insights-svc.log
 EOF
