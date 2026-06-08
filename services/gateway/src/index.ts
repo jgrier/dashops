@@ -193,7 +193,6 @@ serveOpsView({
         }
         return populated
           .map((s) => {
-            // aggregate per toolName
             const byTool = new Map<string, { count: number; cents: number }>();
             for (const e of s.entries) {
               const cur = byTool.get(e.toolName) ?? { count: 0, cents: 0 };
@@ -212,35 +211,13 @@ serveOpsView({
               )
               .join("");
 
-            const recent = s.entries
-              .slice(-10)
-              .reverse()
-              .map(
-                (e) => `<tr>
-                  <td class="muted">${new Date(e.timestampMs).toLocaleTimeString()}</td>
-                  <td><span class="chip">${e.toolName}</span></td>
-                  <td class="counter">${e.costCents}¢</td>
-                  <td class="muted">${e.sessionId}</td>
-                </tr>`
-              )
-              .join("");
-
             return `<div style="margin-bottom:18px">
               <div style="font-size:13px;margin-bottom:8px">
                 <strong>Tenant <code>${s.tenantId}</code></strong> · total spend
                 <span class="counter">${s.totalCents}¢</span>
                 (${(s.totalCents / 100).toFixed(2)} USD)
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:12px">
-                <div>
-                  <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">by tool/purpose</div>
-                  <table><tbody>${aggRows}</tbody></table>
-                </div>
-                <div>
-                  <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">last ${Math.min(10, s.entries.length)} entries</div>
-                  <table><tbody>${recent}</tbody></table>
-                </div>
-              </div>
+              <table style="font-size:12px"><tbody>${aggRows}</tbody></table>
             </div>`;
           })
           .join("");
