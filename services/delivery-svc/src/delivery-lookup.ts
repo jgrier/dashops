@@ -1,5 +1,5 @@
 import * as restate from "@restatedev/restate-sdk";
-import type { ToolPayload, ToolResult } from "@dashops/shared";
+import { bumpToolCount, type ToolPayload, type ToolResult } from "@dashops/shared";
 import { getDelivery } from "./data.js";
 
 export const deliveryLookup = restate.service({
@@ -9,6 +9,7 @@ export const deliveryLookup = restate.service({
       _ctx: restate.Context,
       payload: ToolPayload
     ): Promise<ToolResult> => {
+      bumpToolCount("delivery_lookup");
       const deliveryId = String(payload.params.delivery_id ?? "");
       const d = getDelivery(deliveryId);
       if (!d) {

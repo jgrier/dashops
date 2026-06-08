@@ -61,6 +61,7 @@ All up.
   Restate admin UI : http://localhost:9070
   Operator UI      : http://localhost:3000/operator
   Approver UI      : http://localhost:3000/approver
+  Services portal  : http://localhost:3000/services
 
 Logs:
   tail -f /tmp/dashops-restate.log

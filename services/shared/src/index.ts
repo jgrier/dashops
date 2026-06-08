@@ -171,3 +171,7 @@ export interface PendingApprovalSummary {
 }
 
 export { selfRegisterTools } from "./self-register.js";
+export { serveOpsView } from "./serve-ops-view.js";
+export type { OpsViewOptions, OpsViewSection } from "./serve-ops-view.js";
+export { bumpToolCount, readToolCounters } from "./tool-counters.js";
+export type { ToolCounterSnapshot } from "./tool-counters.js";

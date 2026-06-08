@@ -122,6 +122,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return relay(r, res);
   }
 
+  // ---- service portal ----
+  if (pathname === "/services" || pathname === "/services/") {
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.end(renderServicesPortal());
+    return;
+  }
+
   // ---- static ----
   // Root → operator UI
   if (pathname === "/") {
@@ -135,6 +143,84 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return serveStatic("/approver/index.html", res);
   }
   return serveStatic(pathname, res);
+}
+
+// The portal: a static catalog of every service in the demo, with a link
+// to its self-hosted ops view. Kept inline (no template file) because it's
+// purely static and very small.
+function renderServicesPortal(): string {
+  const services: Array<{
+    name: string;
+    role: string;
+    restatePort: number;
+    uiPort: number;
+  }> = [
+    { name: "gateway",          role: "Registry, middleware chain, dispatch, cost ledger", restatePort: 9080, uiPort: 9180 },
+    { name: "delivery-svc",     role: "delivery_lookup, escalation_history",                restatePort: 9081, uiPort: 9181 },
+    { name: "customer-svc",     role: "customer_lookup, apply_credit, customer_outreach",   restatePort: 9082, uiPort: 9182 },
+    { name: "ops-agent",        role: "Per-session VOs driving the agent loop",             restatePort: 9083, uiPort: 9183 },
+    { name: "guardrails",       role: "PIIGuardrail (regex pre-screen / LLM in live mode)", restatePort: 9084, uiPort: 9184 },
+    { name: "approval-service", role: "Async human-in-the-loop approvals + appeals",        restatePort: 9085, uiPort: 9185 },
+    { name: "insights-svc",     role: "semantic_search, merchant_status",                   restatePort: 9086, uiPort: 9186 },
+  ];
+  const cards = services
+    .map(
+      (s) => `<a class="svc" href="http://localhost:${s.uiPort}" target="_blank">
+        <div class="svc-name">${s.name}</div>
+        <div class="svc-role">${s.role}</div>
+        <div class="svc-ports">
+          <span class="muted">restate</span> <code>:${s.restatePort}</code>
+          &nbsp;·&nbsp;
+          <span class="muted">ops view</span> <code>:${s.uiPort}</code>
+        </div>
+      </a>`
+    )
+    .join("");
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DashOps · services</title>
+<style>
+:root {
+  --bg: #1a1a1a; --surface: #242424; --border: #333;
+  --text: #e0e0e0; --muted: #888; --accent: #f55b35; --chip: #2a3a4a; --chip-fg: #88c0d0;
+}
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--text); margin: 0; padding: 0; }
+.topnav { background: #0e0e0e; padding: 10px 24px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 16px; font-size: 13px; }
+.topnav a { color: var(--muted); text-decoration: none; }
+.topnav a:hover { color: var(--accent); }
+.container { max-width: 920px; margin: 0 auto; padding: 24px; }
+h1 { color: var(--accent); margin: 0 0 4px 0; font-size: 24px; }
+.subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.svc { display: block; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px 18px; text-decoration: none; color: inherit;
+  transition: border-color 0.15s; }
+.svc:hover { border-color: var(--accent); }
+.svc-name { color: var(--accent); font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.svc-role { color: var(--text); font-size: 13px; margin-bottom: 8px; }
+.svc-ports { font-size: 12px; }
+.muted { color: var(--muted); }
+code { font-family: ui-monospace, monospace; color: var(--chip-fg); }
+</style>
+</head>
+<body>
+<div class="topnav">
+  <a href="/operator">operator</a>
+  <a href="/approver">approver</a>
+  <a href="/services">services</a>
+</div>
+<div class="container">
+  <h1>DashOps services</h1>
+  <div class="subtitle">Every service hosts its own ops view. Click through to inspect tools, registry contents, pending approvals, etc.</div>
+  <div class="grid">${cards}</div>
+</div>
+</body>
+</html>`;
 }
 
 async function relay(r: Response, res: http.ServerResponse) {

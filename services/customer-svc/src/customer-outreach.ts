@@ -1,5 +1,5 @@
 import * as restate from "@restatedev/restate-sdk";
-import type { ToolPayload, ToolResult } from "@dashops/shared";
+import { bumpToolCount, type ToolPayload, type ToolResult } from "@dashops/shared";
 
 // Action tool. Approval-gated by gateway policy when the template is in the
 // sensitive set (apology_with_credit, refund_offer).
@@ -10,6 +10,7 @@ export const customerOutreach = restate.service({
       ctx: restate.Context,
       payload: ToolPayload
     ): Promise<ToolResult> => {
+      bumpToolCount("customer_outreach");
       const customerId = String(payload.params.customer_id ?? "");
       const template = String(payload.params.template ?? "");
       const templateParams = (payload.params.template_params as Record<string, unknown>) ?? {};

@@ -1,5 +1,5 @@
 import * as restate from "@restatedev/restate-sdk";
-import type { ToolPayload, ToolResult } from "@dashops/shared";
+import { bumpToolCount, type ToolPayload, type ToolResult } from "@dashops/shared";
 
 // Action tool. Approval-gated by gateway policy (amount > $10 → finance-leads).
 //
@@ -17,6 +17,7 @@ export const applyCredit = restate.service({
       ctx: restate.Context,
       payload: ToolPayload
     ): Promise<ToolResult> => {
+      bumpToolCount("apply_credit");
       const customerId = String(payload.params.customer_id ?? "");
       const amountCents = Number(payload.params.amount_cents ?? 0);
       const reason = String(payload.params.reason ?? "");

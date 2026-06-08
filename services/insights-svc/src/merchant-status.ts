@@ -1,5 +1,5 @@
 import * as restate from "@restatedev/restate-sdk";
-import type { ToolPayload, ToolResult } from "@dashops/shared";
+import { bumpToolCount, type ToolPayload, type ToolResult } from "@dashops/shared";
 
 // Mock merchant status. Tightly rate-limited at the gateway (6/min in
 // the registry) to drive Scene 4 — agent triggers many calls, watches
@@ -11,6 +11,7 @@ export const merchantStatus = restate.service({
       _ctx: restate.Context,
       payload: ToolPayload
     ): Promise<ToolResult> => {
+      bumpToolCount("merchant_status");
       const merchantId = String(payload.params.merchant_id ?? "");
       const statuses: Record<string, unknown> = {
         "M-44": { open: true, kitchenLagMin: 18, lastOrderAt: "2026-06-04T19:42:00Z" },

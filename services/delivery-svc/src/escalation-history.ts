@@ -1,5 +1,5 @@
 import * as restate from "@restatedev/restate-sdk";
-import type { ToolPayload, ToolResult } from "@dashops/shared";
+import { bumpToolCount, type ToolPayload, type ToolResult } from "@dashops/shared";
 import { getEscalations } from "./data.js";
 
 export const escalationHistory = restate.service({
@@ -9,6 +9,7 @@ export const escalationHistory = restate.service({
       _ctx: restate.Context,
       payload: ToolPayload
     ): Promise<ToolResult> => {
+      bumpToolCount("escalation_history");
       const deliveryId = String(payload.params.delivery_id ?? "");
       const escalations = getEscalations(deliveryId);
       const lastSatisfaction = escalations.at(-1)?.satisfaction ?? null;

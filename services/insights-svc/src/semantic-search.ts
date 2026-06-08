@@ -1,5 +1,5 @@
 import * as restate from "@restatedev/restate-sdk";
-import type { ToolPayload, ToolResult } from "@dashops/shared";
+import { bumpToolCount, type ToolPayload, type ToolResult } from "@dashops/shared";
 
 // Stub semantic search. In live mode (Phase 6) this calls an LLM for real
 // embedding-based similarity. For now it returns canned "similar complaints"
@@ -11,6 +11,7 @@ export const semanticSearch = restate.service({
       _ctx: restate.Context,
       payload: ToolPayload
     ): Promise<ToolResult> => {
+      bumpToolCount("semantic_search");
       const query = String(payload.params.query ?? "");
       const results = [
         {
