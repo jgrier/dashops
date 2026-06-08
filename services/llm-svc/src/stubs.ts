@@ -318,7 +318,12 @@ function piiStub(req: CallLLMRequest): CallLLMResponse {
         : undefined,
       detected: flagged ? detected : undefined,
     },
-    costCents: 0,                       // stub regex is free; live mode would charge here
+    // Notional cost for the demo: regex is free in stub mode, but live mode
+    // (Anthropic classifier call) would charge a small amount per check. We
+    // model it as 1¢ so the cost ledger reflects that every guardrail
+    // invocation has a price — without that, frequent PII checks vanish
+    // from the per-tenant bill.
+    costCents: 1,
     mode: "stub",
   };
 }

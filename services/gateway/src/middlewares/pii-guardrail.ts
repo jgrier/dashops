@@ -1,6 +1,6 @@
 import * as restate from "@restatedev/restate-sdk";
+import type { CallerIdentity } from "@dashops/shared";
 import type { Middleware, MiddlewareResult, MiddlewareContext } from "./types.js";
-import type { CostEntry } from "../cost-ledger.js";
 
 type PIIResp = {
   flagged: boolean;
@@ -20,33 +20,21 @@ export const piiGuardrailMW: Middleware = {
   ): Promise<MiddlewareResult> {
     const req = mctx.request;
 
+    // Pass the original tool caller's identity through so the underlying
+    // gateway.callLLM that PIIGuardrail.check makes bills the right tenant.
+    // The middleware itself no longer records a separate cost entry —
+    // callLLM is the single source of LLM cost in the ledger now.
     const resp = await ctx.genericCall<
-      { params: Record<string, unknown>; toolName: string },
+      { params: Record<string, unknown>; toolName: string; identity: CallerIdentity },
       PIIResp
     >({
       service: "PIIGuardrail",
       method: "check",
-      parameter: { params: req.params, toolName: req.toolName },
+      parameter: { params: req.params, toolName: req.toolName, identity: req.identity },
       inputSerde: restate.serde.json,
       outputSerde: restate.serde.json,
       name: "mw · pii-guardrail",
     });
-
-    if (resp.costCents > 0) {
-      const now = await ctx.date.now();
-      ctx.genericSend<CostEntry>({
-        service: "CostLedger",
-        method: "record",
-        key: req.identity.tenantId,
-        parameter: {
-          toolName: "guardrail:pii",
-          costCents: resp.costCents,
-          timestampMs: now,
-          sessionId: req.identity.sessionId,
-        },
-        inputSerde: restate.serde.json,
-      });
-    }
 
     if (!resp.flagged) return { kind: "pass" };
 

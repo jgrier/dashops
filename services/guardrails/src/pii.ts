@@ -11,6 +11,11 @@ import type { CallLLMRequest, CallLLMResponse, CallerIdentity } from "@dashops/s
 export interface PIICheckRequest {
   params: Record<string, unknown>;
   toolName: string;
+  // Original tool caller's identity, threaded through so the underlying
+  // gateway.callLLM bill lands on the actual tenant — not on a synthetic
+  // "platform" tenant. This is also what lets us drop the middleware's
+  // separate cost-record path and rely on callLLM as the single source.
+  identity: CallerIdentity;
 }
 
 export interface PIICheckResponse {
@@ -19,19 +24,6 @@ export interface PIICheckResponse {
   detected?: Array<{ kind: string; sample: string }>;
   costCents: number;
 }
-
-// Caller identity for the LLM call. The guardrail isn't a per-tenant actor
-// (it's the platform inspecting an outbound call), so we use a synthetic
-// platform identity. The original tool call's tenant is what matters for
-// cost accounting, but cost is recorded by the gateway against this
-// guardrail's identity — fine for now since cost on the regex stub is 0.
-const PLATFORM_IDENTITY: CallerIdentity = {
-  tenantId: "platform",
-  userId: "platform:guardrails",
-  agentId: "pii-guardrail",
-  sessionId: "pii-guardrail",
-  traceId: "guardrail",
-};
 
 export const piiGuardrail = restate.service({
   name: "PIIGuardrail",
@@ -43,7 +35,7 @@ export const piiGuardrail = restate.service({
       const llmReq: CallLLMRequest = {
         purpose: "guardrail-pii",
         params: { params: req.params, toolName: req.toolName },
-        identity: PLATFORM_IDENTITY,
+        identity: req.identity,
       };
       const resp = await ctx.genericCall<CallLLMRequest, CallLLMResponse>({
         service: "Gateway",
