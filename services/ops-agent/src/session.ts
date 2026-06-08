@@ -161,7 +161,11 @@ export const session = restate.object({
           costCents: resp.costCents,
           timestampMs: await ctx.date.now(),
         });
-        await setStatus(ctx, "complete");
+        // Resume the agent loop from here — the planner sees the freshly-
+        // appended tool result and decides what's next (usually a final
+        // assistant summary, sometimes another tool step). Without this,
+        // the turn ended mid-stride: tool bubble shown, no closing reply.
+        await runLoop(ctx, identity);
         return;
       }
 
