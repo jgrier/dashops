@@ -32,12 +32,9 @@ Once everything is green:
 
 ## Architecture
 
-Ten processes total, all spawned by the supervisor:
-
 ```mermaid
 flowchart TB
   classDef ext fill:#1e293b,stroke:#64748b,color:#f1f5f9
-  classDef sup fill:#2a1d18,stroke:#f55b35,color:#f55b35
   classDef bff fill:#0e3a4a,stroke:#88c0d0,color:#88c0d0
   classDef agent fill:#1e3a1e,stroke:#7dd987,color:#cfeed1
   classDef gw fill:#2a1d3a,stroke:#bd87dd,color:#e0c0f0
@@ -47,8 +44,9 @@ flowchart TB
   browser["Browser
 operator · approver · portal"]:::ext
 
-  bff["BFF process · :3001
-all browser HTTP"]:::bff
+  bff["BFF · :3001
+serves every browser page
+reads state from each service"]:::bff
 
   subgraph rt["Restate runtime — durable execution beneath every process below
 ingress :8080 · admin :9070"]
@@ -86,20 +84,7 @@ merchant_status"]:::svc
 
   class rt hidden
 
-  sup["./dashops
-supervisor TUI
-runs in terminal · no port
-spawns + kills every process"]:::sup
-
   browser ==>|HTTP| bff
-
-  bff -->|reads state| opsagent
-  bff -->|reads, decides| approvalsvc
-  bff -->|reads| gateway
-  bff -->|reads| llmsvc
-  bff -->|reads| delivery
-  bff -->|reads| customer
-  bff -->|reads| insights
 
   opsagent -->|callTool / callLLM| gateway
   opsagent -->|requestApproval| approvalsvc
@@ -113,17 +98,15 @@ spawns + kills every process"]:::sup
 
   guardrails -.callLLM.-> gateway
   insights -.callLLM.-> gateway
-
-  sup -.spawn / kill.-> bff
-  sup -.spawn / kill.-> rt
 ```
 
 **How to read this:**
 
-- Every box is a separate **OS process**. `lsof -nP -iTCP -sTCP:LISTEN` will show one TCP listener per port.
-- Arrows are **logical caller → callee** edges. Every one actually traverses Restate's ingress at runtime — Restate journals the call, deduplicates retries, and resumes durably after process death. The runtime is drawn as the dashed backdrop on purpose: showing it as a hop on every arrow would clutter the picture without adding information. Treat it as the substrate.
-- Dotted arrows (`guardrails → gateway`, `insights → gateway`) are cross-cutting LLM calls: the PII guardrail's classifier and the semantic-search tool both route their own LLM access back through `Gateway.callLLM` so every LLM call gets the same policy/cost/audit treatment.
-- The supervisor sits **outside** the runtime — it's an ordinary Node process running in your terminal. It's the only thing that isn't durable, because it's the only thing that has to start everything else.
+- Every box is a separate **OS process**. `lsof -nP -iTCP -sTCP:LISTEN` shows one TCP listener per port.
+- Arrows are **logical caller → callee** edges between application services. Every one actually traverses Restate's ingress at runtime — Restate journals the call, deduplicates retries, and resumes durably after process death. The runtime is drawn as the dashed backdrop on purpose: showing it as a hop on every arrow would clutter the picture without adding information. Treat it as the substrate.
+- Dotted arrows (`guardrails → gateway`, `insights → gateway`) are cross-cutting LLM calls — the PII guardrail's classifier and the semantic-search tool route their own LLM access back through `Gateway.callLLM` so every LLM call gets the same policy/cost/audit treatment.
+- The BFF reads state from every service in the runtime to render its pages, but those edges aren't drawn — they're plumbing, not architecture. The interesting calls are agent → gateway → tools/guardrails/LLM, and those are what the diagram emphasizes.
+- A supervisor process spawns and kills every box above (see [Running it](#running-it)), but it's operational tooling rather than part of the architecture itself, so it's not drawn here.
 
 ## What each process does
 
