@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# DashOps launcher — runs the supervisor TUI.
+# Equivalent to `npm run dev:supervisor`, but shorter to type and
+# pins the working directory to the repo root regardless of where
+# you invoke it from.
+
+set -e
+cd "$(dirname "$0")"
+exec npm run dev:supervisor
