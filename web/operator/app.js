@@ -51,6 +51,10 @@ formEl.addEventListener("submit", (e) => {
   sendMessage(msg);
 });
 
+document.getElementById("appeal-btn").addEventListener("click", async () => {
+  await fetch(`/api/sessions/${sessionId}/appeal`, { method: "POST" });
+});
+
 newSessionBtn.addEventListener("click", async () => {
   // Reset the server side (clears VO state); generate a fresh session_id
   // locally; rewipe the UI.
@@ -119,6 +123,17 @@ function render(state) {
     document.getElementById("pending-summary").textContent = state.pendingApproval.actionSummary;
   } else {
     banner.style.display = "none";
+  }
+
+  // appeal banner — visible when blocked and appealable
+  const appealBanner = document.getElementById("appeal-banner");
+  if (state.status === "blocked_appealable" && state.pendingAppeal) {
+    appealBanner.style.display = "block";
+    document.getElementById("appeal-source").textContent = state.pendingAppeal.blockSource;
+    document.getElementById("appeal-reason").textContent = state.pendingAppeal.blockReason;
+    document.getElementById("appeal-group").textContent = state.pendingAppeal.approverGroup;
+  } else {
+    appealBanner.style.display = "none";
   }
 
   // messages — append new ones only. Reconcile optimistic renders by

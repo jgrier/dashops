@@ -16,7 +16,9 @@ export const approvalService = restate.object({
       payload: ApprovalRequestPayload
     ): Promise<{ approvalId: string }> => {
       const now = await ctx.date.now();
+      const kind = payload.kind ?? "approval";
       ctx.set("status", "pending");
+      ctx.set("kind", kind);
       ctx.set("awakeableId", payload.awakeableId);
       ctx.set("approverGroup", payload.approverGroup);
       ctx.set("actionSummary", payload.actionSummary);
@@ -24,6 +26,9 @@ export const approvalService = restate.object({
       ctx.set("toolName", payload.toolName);
       ctx.set("toolParams", payload.toolParams);
       ctx.set("initiator", payload.initiator);
+      if (payload.appealBypassMiddleware) {
+        ctx.set("appealBypassMiddleware", payload.appealBypassMiddleware);
+      }
       ctx.set("createdAtMs", now);
 
       ctx.genericSend({
@@ -36,6 +41,7 @@ export const approvalService = restate.object({
           initiator: { userId: payload.initiator.userId, sessionId: payload.initiator.sessionId },
           toolName: payload.toolName,
           createdAtMs: now,
+          kind,
         },
         inputSerde: restate.serde.json,
       });
@@ -133,6 +139,18 @@ export const approvalService = restate.object({
           decidedAtMs: (await ctx.get<number>("decidedAtMs")) ?? undefined,
         };
       }
+    ),
+
+    // Shared introspection of the appeal-specific bits (so ops-agent can
+    // look up which middleware to bypass and recover params after suspending).
+    getKind: restate.handlers.object.shared(
+      async (
+        ctx: restate.ObjectSharedContext
+      ): Promise<{ kind: string; appealBypassMiddleware?: string }> => ({
+        kind: (await ctx.get<string>("kind")) ?? "approval",
+        appealBypassMiddleware:
+          (await ctx.get<string>("appealBypassMiddleware")) ?? undefined,
+      })
     ),
   },
 });

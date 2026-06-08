@@ -52,9 +52,11 @@ function render(list) {
 
 function renderCard(item) {
   const card = document.createElement("div");
-  card.className = "card";
+  const isAppeal = item.kind === "appeal";
+  card.className = "card" + (isAppeal ? " appeal" : "");
   card.innerHTML = `
     <div class="meta">
+      ${isAppeal ? '<span class="kind-chip appeal-chip">APPEAL</span>' : ""}
       <span class="tool-chip">${escape(item.toolName)}</span>
       <span>requested by ${escape(item.initiator?.userId ?? "?")} · session ${escape(
     item.initiator?.sessionId ?? "?"

@@ -81,6 +81,8 @@ export type SessionStatus =
   | "thinking"
   | "calling_tool"
   | "needs_approval"
+  | "blocked_appealable"
+  | "appeal_pending"
   | "complete"
   | "failed";
 
@@ -105,6 +107,17 @@ export interface SessionState {
     approverGroup: string;
     toolName: string;
   };
+  // populated when status === "blocked_appealable" — the call params kept
+  // around so the operator can escalate after the fact.
+  pendingAppeal?: {
+    toolName: string;
+    params: Record<string, unknown>;
+    blockSource: string;       // which middleware blocked
+    blockReason: string;
+    approverGroup: string;
+    summaryHint: string;
+    actionFingerprint: string;
+  };
   failureReason?: string;
   createdAtMs: number;
   updatedAtMs: number;
@@ -120,6 +133,12 @@ export interface ApprovalRequestPayload {
   toolName: string;
   toolParams: Record<string, unknown>;
   initiator: CallerIdentity;
+  // "approval" = standard policy-gated action. "appeal" = operator-requested
+  // override of a previously-blocked guardrail. Approver UI displays them
+  // differently. Verification flow is identical.
+  kind?: "approval" | "appeal";
+  // For kind="appeal": which middleware's block this appeal grants bypass for.
+  appealBypassMiddleware?: string;
 }
 
 export interface ApprovalDecision {
@@ -148,4 +167,5 @@ export interface PendingApprovalSummary {
   initiator: { userId: string; sessionId: string };
   createdAtMs: number;
   toolName: string;
+  kind?: "approval" | "appeal";
 }

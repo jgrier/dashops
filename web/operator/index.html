@@ -184,6 +184,15 @@
     <strong>⏸ Waiting on approval</strong> from <span id="pending-group"></span>: <span id="pending-summary"></span>
   </div>
 
+  <div id="appeal-banner" style="display:none; padding:10px 20px; background:#3a1f1f; color:#ffb0a0; font-size:13px; border-bottom:1px solid #4a2828; display:flex; align-items:center; gap:12px;">
+    <div style="flex:1">
+      <strong>⚠ Blocked by <span id="appeal-source"></span>:</strong> <span id="appeal-reason"></span>
+    </div>
+    <button id="appeal-btn" style="background:#f55b35;color:#fff;border:0;border-radius:4px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">
+      Request review from <span id="appeal-group"></span>
+    </button>
+  </div>
+
   <main id="messages"></main>
 
   <footer>

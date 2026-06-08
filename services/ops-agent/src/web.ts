@@ -79,6 +79,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return relay(r, res);
   }
 
+  // POST /api/sessions/:id/appeal — operator escalates the current block.
+  // Fire-and-forget; the session VO suspends on an awakeable.
+  const appealMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/appeal$/);
+  if (appealMatch && req.method === "POST") {
+    const sessionId = decodeURIComponent(appealMatch[1]);
+    const r = await fetch(
+      `${RESTATE_INGRESS}/Session/${encodeURIComponent(sessionId)}/requestAppeal/send`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }
+    );
+    return relay(r, res);
+  }
+
   // ---- approval APIs ----
   if (pathname === "/api/approvals/pending" && req.method === "GET") {
     const group = url.searchParams.get("group") ?? "finance-leads";

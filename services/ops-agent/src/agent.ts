@@ -88,6 +88,28 @@ async function dispatchToolCall(
     }
 
     if (resp.status === "blocked") {
+      const appeal = resp.blocked?.appeal;
+      if (appeal) {
+        // Appealable block — persist params so the operator can escalate,
+        // mark the session as blocked-but-recoverable rather than failed.
+        ctx.set("pendingAppeal", {
+          toolName: tool,
+          params,
+          blockSource: resp.blocked!.source,
+          blockReason: resp.blocked!.message,
+          approverGroup: appeal.approverGroup,
+          summaryHint: appeal.summaryHint,
+          actionFingerprint: appeal.actionFingerprint,
+        });
+        await appendMessage(ctx, {
+          id: ctx.rand.uuidv4(),
+          role: "system",
+          content: `Blocked by ${resp.blocked!.source}: ${resp.blocked!.message}. You can request human review.`,
+          timestampMs: await ctx.date.now(),
+        });
+        await setStatus(ctx, "blocked_appealable");
+        return false;
+      }
       await appendMessage(ctx, {
         id: ctx.rand.uuidv4(),
         role: "system",

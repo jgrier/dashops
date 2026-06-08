@@ -9,6 +9,7 @@ import type {
 import type { CostEntry } from "./cost-ledger.js";
 import { gatewayMiddlewares } from "./middlewares/index.js";
 import type { MiddlewareContext, MiddlewareResult } from "./middlewares/types.js";
+import { fingerprint } from "./policies.js";
 
 // The gateway: every agent ↔ tool call passes through here.
 // Pipeline:
@@ -39,6 +40,34 @@ export const gateway = restate.service({
           toolName: req.toolName,
           blocked: { source: "registry", message: `unknown tool: ${req.toolName}` },
         };
+      }
+
+      // ---- Step 1b: if this is an appeal-retry, verify the appeal token.
+      // The token must (a) reference an approved appeal record AND (b) the
+      // appeal must have been issued for THIS exact call (matched by
+      // fingerprint). If both hold, we trust the bypassMiddlewares list.
+      if (req.appealToken) {
+        type VerifyResp = { ok: boolean; reason?: string };
+        const callFingerprint = fingerprint(req.toolName, req.params);
+        const verify = await ctx.genericCall<{ actionFingerprint: string }, VerifyResp>({
+          service: "ApprovalService",
+          method: "verifyToken",
+          key: req.appealToken,
+          parameter: { actionFingerprint: callFingerprint },
+          inputSerde: restate.serde.json,
+          outputSerde: restate.serde.json,
+          name: "appeal · verify",
+        });
+        if (!verify.ok) {
+          return {
+            status: "blocked",
+            toolName: req.toolName,
+            blocked: {
+              source: "appeal",
+              message: verify.reason ?? "appeal token invalid",
+            },
+          };
+        }
       }
 
       const mctx: MiddlewareContext = { request: req, registration };
@@ -109,7 +138,7 @@ async function runMiddlewareChain(
         continue;
       }
       // block / block_appealable / needs_human — short-circuit
-      return wrapResultAsResponse(mctx.request.toolName, result);
+      return wrapResultAsResponse(mctx.request.toolName, result, mctx.request);
     }
   }
   return null;
@@ -117,7 +146,8 @@ async function runMiddlewareChain(
 
 function wrapResultAsResponse(
   toolName: string,
-  result: MiddlewareResult
+  result: MiddlewareResult,
+  req: CallToolRequest
 ): CallToolResponse {
   switch (result.kind) {
     case "block":
@@ -134,15 +164,11 @@ function wrapResultAsResponse(
           source: result.source,
           message: result.reason,
           details: result.details,
-          // Action fingerprint isn't computed here because individual middlewares
-          // may not know how to compute it; we set it at the call site if needed.
-          // For commit 2, ops-agent will compute the fingerprint when issuing
-          // the appeal request.
           appeal: {
             approverGroup: result.appeal.approverGroup,
             summaryHint: result.appeal.summaryHint,
             middlewareName: result.source,
-            actionFingerprint: "",   // ops-agent fills this in when creating the appeal
+            actionFingerprint: fingerprint(req.toolName, req.params),
           },
         },
       };
