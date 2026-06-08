@@ -8,6 +8,21 @@ export interface CallerIdentity {
   traceId: string;
 }
 
+// Synthetic identity used by cross-cutting platform concerns (guardrails,
+// audit summarizers, prompt-injection detectors, ...) when they make their
+// own LLM calls. Costs accrue to the "platform" tenant in CostLedger so
+// the per-user tenants only carry what they explicitly requested.
+//
+// Pattern: anything the platform inflicts on a tenant in service of its
+// own safety/compliance posture should bill here, not on the tenant.
+export const PLATFORM_IDENTITY: CallerIdentity = {
+  tenantId: "platform",
+  userId: "platform:cross-cutting",
+  agentId: "platform",
+  sessionId: "platform",
+  traceId: "platform",
+};
+
 export interface CallToolRequest {
   toolName: string;
   params: Record<string, unknown>;

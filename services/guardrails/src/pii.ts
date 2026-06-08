@@ -1,21 +1,19 @@
 import * as restate from "@restatedev/restate-sdk";
-import type { CallLLMRequest, CallLLMResponse, CallerIdentity } from "@dashops/shared";
+import { PLATFORM_IDENTITY, type CallLLMRequest, type CallLLMResponse } from "@dashops/shared";
 
 // PII guardrail: inspects the JSON-serialized params of a pending tool call
 // and flags if PII patterns are detected. Today the implementation is a
 // regex pre-screen; tomorrow (ANTHROPIC_API_KEY set) it's an LLM classifier.
-// Either way the call routes through the gateway's callLLM handler, so
-// cost, audit logging, and future rate-limit/prompt-redaction concerns are
-// all applied at one place.
+// Either way the call routes through the gateway's callLLM handler.
+//
+// Cost attribution: this is a cross-cutting platform concern, not something
+// the tenant asked for. The LLM call is made with PLATFORM_IDENTITY so the
+// cost lands on the "platform" tenant ledger — same pattern any future
+// safety guardrail (prompt-injection, content-safety) should follow.
 
 export interface PIICheckRequest {
   params: Record<string, unknown>;
   toolName: string;
-  // Original tool caller's identity, threaded through so the underlying
-  // gateway.callLLM bill lands on the actual tenant — not on a synthetic
-  // "platform" tenant. This is also what lets us drop the middleware's
-  // separate cost-record path and rely on callLLM as the single source.
-  identity: CallerIdentity;
 }
 
 export interface PIICheckResponse {
@@ -35,7 +33,7 @@ export const piiGuardrail = restate.service({
       const llmReq: CallLLMRequest = {
         purpose: "guardrail-pii",
         params: { params: req.params, toolName: req.toolName },
-        identity: req.identity,
+        identity: PLATFORM_IDENTITY,
       };
       const resp = await ctx.genericCall<CallLLMRequest, CallLLMResponse>({
         service: "Gateway",
