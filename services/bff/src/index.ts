@@ -123,6 +123,24 @@ async function dispatch(
     return true;
   }
 
+  // ---- live rate-limit edit (proxy to ToolRegistry.updateRateLimit) ----
+  const rlMatch = p.match(/^\/api\/tools\/([^/]+)\/ratelimit$/);
+  if (rlMatch && req.method === "POST") {
+    const toolName = decodeURIComponent(rlMatch[1]);
+    const body = await readBody(req);
+    const parsed = JSON.parse(body) as { perMinute: number };
+    const r = await fetch(
+      `${RESTATE_INGRESS}/ToolRegistry/default/updateRateLimit`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ toolName, perMinute: parsed.perMinute }),
+      }
+    );
+    await relay(r, res);
+    return true;
+  }
+
   // ---- /services portal (server-rendered) ----
   if (p === "/services" || p === "/services/") {
     res.statusCode = 200;
@@ -416,7 +434,11 @@ function renderBucketsSection(tools: ToolRegistration[] | null, buckets: Array<B
         <td><span class="chip">${escapeHtml(r.name)}</span></td>
         <td>${fillBar(r.tokens, r.cap)}</td>
         <td class="counter">${r.tokens.toFixed(1)} / ${r.cap}</td>
-        <td class="muted">${r.cap}/min</td>
+        <td>
+          <button onclick="dashops.rl('${escapeHtml(r.name)}', -1)" style="background:#2a2a2a;color:#e0e0e0;border:1px solid #444;border-radius:3px;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1">−</button>
+          <span class="muted" style="display:inline-block;min-width:54px;text-align:center">${r.cap}/min</span>
+          <button onclick="dashops.rl('${escapeHtml(r.name)}', +1)" style="background:#2a2a2a;color:#e0e0e0;border:1px solid #444;border-radius:3px;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1">+</button>
+        </td>
         <td class="muted">${r.eta}</td>
       </tr>`
     )
@@ -424,10 +446,35 @@ function renderBucketsSection(tools: ToolRegistration[] | null, buckets: Array<B
 
   return section(
     "Rate-limit buckets (live, durable in Restate)",
-    `<table><thead><tr><th>tool</th><th>fill</th><th>tokens</th><th>capacity</th><th>next refill</th></tr></thead><tbody>${html}</tbody></table>
+    `<table><thead><tr><th>tool</th><th>fill</th><th>tokens</th><th>capacity (live edit)</th><th>next refill</th></tr></thead><tbody>${html}</tbody></table>
      <div class="muted" style="font-size:12px;margin-top:8px">
-       Showing the <code>tenant_tool:demo-tenant:&lt;tool&gt;</code> bucket per tool, sorted by remaining capacity (most depleted first). When a bucket drains, the gateway's rate-limit middleware durably sleeps the call via <code>ctx.sleep</code> until a token refills. The token count is computed live on read — even if no call has hit the bucket recently, you'll see it trickling back up between page refreshes.
-     </div>`
+       Showing the <code>tenant_tool:demo-tenant:&lt;tool&gt;</code> bucket per tool, sorted by remaining capacity (most depleted first). Tokens computed live on read so the buckets visibly trickle back up between page refreshes. Use the −/+ buttons to change the per-minute limit on the fly — the next call's <code>acquire</code> picks up the new value, and lowering it clamps the bucket down immediately.
+     </div>
+     <script>
+       window.dashops = window.dashops || {};
+       window.dashops.rl = async function(tool, delta) {
+         // Find this row's current cap from the displayed text. The "/min"
+         // span lives between the - and + buttons; parse it.
+         const btns = document.querySelectorAll('button');
+         let curr = null;
+         for (const b of btns) {
+           if (b.outerHTML.includes(tool) && b.nextElementSibling) {
+             curr = parseInt(b.nextElementSibling.textContent, 10);
+             break;
+           }
+         }
+         if (!curr) return;
+         const next = Math.max(1, curr + delta * (curr >= 20 ? 5 : 1));
+         await fetch('/api/tools/' + encodeURIComponent(tool) + '/ratelimit', {
+           method: 'POST',
+           headers: { 'content-type': 'application/json' },
+           body: JSON.stringify({ perMinute: next }),
+         });
+         // The page meta-refreshes every 3s — but trigger an immediate one so
+         // the change shows up without waiting.
+         location.reload();
+       };
+     </script>`
   );
 }
 

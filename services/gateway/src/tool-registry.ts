@@ -42,6 +42,26 @@ export const toolRegistry = restate.object({
         return Object.values(tools);
       }
     ),
+
+    // Live-configurable rate limit. The rate-limit middleware reads
+    // registration.rateLimit?.perMinute on every call, so the next acquire
+    // uses the new value. The TokenBucket VO overwrites its stored
+    // capacity + refillRate on each acquire too, so lowering the limit
+    // immediately clamps tokens down and raising it lets the bucket refill
+    // toward the new ceiling.
+    updateRateLimit: async (
+      ctx: restate.ObjectContext,
+      req: { toolName: string; perMinute: number }
+    ): Promise<{ ok: boolean; reason?: string }> => {
+      const tools = (await ctx.get<Record<string, ToolRegistration>>("tools")) ?? {};
+      const entry = tools[req.toolName];
+      if (!entry) return { ok: false, reason: `unknown tool: ${req.toolName}` };
+      const pm = Math.max(1, Math.min(600, Math.floor(req.perMinute)));
+      entry.rateLimit = { perMinute: pm };
+      tools[req.toolName] = entry;
+      ctx.set("tools", tools);
+      return { ok: true };
+    },
   },
 });
 
