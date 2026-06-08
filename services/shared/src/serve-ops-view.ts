@@ -72,6 +72,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg); color: var(--text); margin: 0; padding: 0; }
 .topnav { background: #0e0e0e; padding: 10px 24px; border-bottom: 1px solid var(--border);
   display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.topnav nav { display: flex; gap: 14px; }
 .topnav a { color: var(--muted); text-decoration: none; }
 .topnav a:hover { color: var(--accent); }
 .container { max-width: 880px; margin: 0 auto; padding: 24px; }
@@ -96,7 +97,11 @@ code { font-family: ui-monospace, monospace; font-size: 12px; color: var(--chip-
 </head>
 <body>
 <div class="topnav">
-  <span><a href="http://localhost:3000/services">← all services</a></span>
+  <nav>
+    <a href="http://localhost:3000/operator">operator</a>
+    <a href="http://localhost:3000/approver">approver</a>
+    <a href="http://localhost:3000/services">services</a>
+  </nav>
   <span class="muted">auto-refresh: 3s</span>
 </div>
 <div class="container">

@@ -193,6 +193,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   display: flex; gap: 16px; font-size: 13px; }
 .topnav a { color: var(--muted); text-decoration: none; }
 .topnav a:hover { color: var(--accent); }
+.topnav a.active { color: var(--accent); font-weight: 600; }
 .container { max-width: 920px; margin: 0 auto; padding: 24px; }
 h1 { color: var(--accent); margin: 0 0 4px 0; font-size: 24px; }
 .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
@@ -212,7 +213,7 @@ code { font-family: ui-monospace, monospace; color: var(--chip-fg); }
 <div class="topnav">
   <a href="/operator">operator</a>
   <a href="/approver">approver</a>
-  <a href="/services">services</a>
+  <a href="/services" class="active">services</a>
 </div>
 <div class="container">
   <h1>DashOps services</h1>
