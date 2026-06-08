@@ -282,6 +282,9 @@ interface BucketState {
   key: string;
   tokens: number | null;
   lastRefillMs: number | null;
+  capacity: number | null;
+  refillRate: number | null;
+  nextRefillMs: number | null;
 }
 
 interface CostEntry {
@@ -378,26 +381,52 @@ function fillBar(tokens: number | null, capacity: number): string {
 
 function renderBucketsSection(tools: ToolRegistration[] | null, buckets: Array<BucketState | null>): string {
   if (!tools || tools.length === 0) return emptySection("Rate-limit buckets (live, durable in Restate)", "No tools yet.");
-  const rows = tools
-    .map((t, i) => {
-      const cap = t.rateLimit?.perMinute ?? 60;
-      const st = buckets[i];
-      const tokens = st?.tokens ?? cap;
-      const lastRefill = st?.lastRefillMs ? new Date(st.lastRefillMs).toLocaleTimeString() : "—";
-      return `<tr>
-        <td><span class="chip">${escapeHtml(t.name)}</span></td>
-        <td>${fillBar(tokens, cap)}</td>
-        <td class="counter">${tokens.toFixed(1)} / ${cap}</td>
-        <td class="muted">${cap}/min</td>
-        <td class="muted">${lastRefill}</td>
-      </tr>`;
-    })
+
+  // Compose rows with the live token count from each bucket's state. If a
+  // bucket hasn't been acquired against yet, fall back to capacity from the
+  // tool registration so the row isn't blank.
+  const rows = tools.map((t, i) => {
+    const cap = t.rateLimit?.perMinute ?? 60;
+    const st = buckets[i];
+    const tokens = st?.tokens ?? cap;
+    const fillPct = tokens / cap;
+    const eta = st?.nextRefillMs != null
+      ? `+1 in ${(st.nextRefillMs / 1000).toFixed(1)}s`
+      : `<span class="muted">full</span>`;
+    return {
+      name: t.name,
+      cap,
+      tokens,
+      fillPct,
+      eta,
+      touched: !!st?.lastRefillMs,
+    };
+  });
+
+  // Sort: most-depleted first so the interesting ones float to the top.
+  // Untouched buckets (effectively "full, idle") go to the bottom.
+  rows.sort((a, b) => {
+    if (a.touched !== b.touched) return a.touched ? -1 : 1;
+    return a.fillPct - b.fillPct;
+  });
+
+  const html = rows
+    .map(
+      (r) => `<tr>
+        <td><span class="chip">${escapeHtml(r.name)}</span></td>
+        <td>${fillBar(r.tokens, r.cap)}</td>
+        <td class="counter">${r.tokens.toFixed(1)} / ${r.cap}</td>
+        <td class="muted">${r.cap}/min</td>
+        <td class="muted">${r.eta}</td>
+      </tr>`
+    )
     .join("");
+
   return section(
     "Rate-limit buckets (live, durable in Restate)",
-    `<table><thead><tr><th>tool</th><th>fill</th><th>tokens</th><th>capacity</th><th>last refill</th></tr></thead><tbody>${rows}</tbody></table>
+    `<table><thead><tr><th>tool</th><th>fill</th><th>tokens</th><th>capacity</th><th>next refill</th></tr></thead><tbody>${html}</tbody></table>
      <div class="muted" style="font-size:12px;margin-top:8px">
-       Showing the <code>tenant_tool:demo-tenant:&lt;tool&gt;</code> bucket per tool. When a bucket drains, the gateway's rate-limit middleware durably sleeps the call via <code>ctx.sleep</code> until a token refills.
+       Showing the <code>tenant_tool:demo-tenant:&lt;tool&gt;</code> bucket per tool, sorted by remaining capacity (most depleted first). When a bucket drains, the gateway's rate-limit middleware durably sleeps the call via <code>ctx.sleep</code> until a token refills. The token count is computed live on read — even if no call has hit the bucket recently, you'll see it trickling back up between page refreshes.
      </div>`
   );
 }

@@ -34,9 +34,14 @@ export const tokenBucket = restate.object({
       const lastRefill = (await ctx.get<number>("lastRefillMs")) ?? now;
       let tokens = (await ctx.get<number>("tokens")) ?? req.capacity;
 
-      // Refill based on elapsed time.
       const elapsedSec = Math.max(0, (now - lastRefill) / 1000);
       tokens = Math.min(req.capacity, tokens + elapsedSec * req.refillRate);
+
+      // Persist capacity + refillRate so the shared state handler can compute
+      // a live token count without the caller having to pass them in. Writes
+      // are idempotent — same call site sends the same values every time.
+      ctx.set("capacity", req.capacity);
+      ctx.set("refillRate", req.refillRate);
 
       if (tokens >= req.tokens) {
         tokens -= req.tokens;
@@ -52,12 +57,49 @@ export const tokenBucket = restate.object({
       return { acquired: false, waitMs, tokensLeft: tokens };
     },
 
+    // Live state: applies the same refill math `acquire` would, so the
+    // returned `tokens` reflects what's available NOW, not whatever was
+    // left over the last time someone acquired. Lets the ops view show
+    // the bucket trickling back up between bursts.
     state: restate.handlers.object.shared(
-      async (ctx: restate.ObjectSharedContext) => ({
-        key: ctx.key,
-        tokens: (await ctx.get<number>("tokens")) ?? null,
-        lastRefillMs: (await ctx.get<number>("lastRefillMs")) ?? null,
-      })
+      async (ctx: restate.ObjectSharedContext) => {
+        const storedTokens = await ctx.get<number>("tokens");
+        const lastRefill = await ctx.get<number>("lastRefillMs");
+        const capacity = await ctx.get<number>("capacity");
+        const refillRate = await ctx.get<number>("refillRate");
+
+        // Never been touched — buckets only come into existence via acquire.
+        if (storedTokens === null || lastRefill === null || capacity === null || refillRate === null) {
+          return {
+            key: ctx.key,
+            tokens: null,
+            lastRefillMs: null,
+            capacity: null,
+            refillRate: null,
+            nextRefillMs: null,
+          };
+        }
+
+        const now = await ctx.date.now();
+        const elapsedSec = Math.max(0, (now - lastRefill) / 1000);
+        const live = Math.min(capacity, storedTokens + elapsedSec * refillRate);
+
+        // ms until the bucket gains its next whole token (or null if full).
+        let nextRefillMs: number | null = null;
+        if (live < capacity) {
+          const tokensTillNext = Math.ceil(live) - live || 1;
+          nextRefillMs = Math.max(0, Math.ceil((tokensTillNext / refillRate) * 1000));
+        }
+
+        return {
+          key: ctx.key,
+          tokens: live,
+          lastRefillMs: lastRefill,
+          capacity,
+          refillRate,
+          nextRefillMs,
+        };
+      }
     ),
   },
 });
