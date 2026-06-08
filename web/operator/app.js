@@ -115,6 +115,26 @@ function render(state) {
   statusEl.className = "status " + state.status;
   statusTextEl.textContent = state.status;
 
+  // Disable input while the session VO is suspended on a human decision.
+  // The Session VO lock is held across the awakeable wait, so any message
+  // sent now would just queue server-side until the approval resolves. Be
+  // honest with the user instead.
+  const blockedOnHuman =
+    state.status === "needs_approval" || state.status === "appeal_pending";
+  const sendBtn = formEl.querySelector("button[type=submit]");
+  inputEl.disabled = blockedOnHuman;
+  sendBtn.disabled = blockedOnHuman;
+  if (blockedOnHuman) {
+    inputEl.dataset.savedPlaceholder ||= inputEl.placeholder;
+    inputEl.placeholder =
+      state.status === "appeal_pending"
+        ? "Waiting on appeal decision…"
+        : "Waiting on approval decision…";
+  } else if (inputEl.dataset.savedPlaceholder) {
+    inputEl.placeholder = inputEl.dataset.savedPlaceholder;
+    delete inputEl.dataset.savedPlaceholder;
+  }
+
   // pending approval banner
   const banner = document.getElementById("pending-banner");
   if (state.pendingApproval) {
@@ -140,6 +160,11 @@ function render(state) {
   // matching the latest user message: if our server-side echo arrives
   // and we still have an optimistic version of the same content, drop
   // the optimistic one so we don't double-render.
+  // Capture scroll position BEFORE any DOM changes so we can decide
+  // whether to stick the user to the bottom (only if they already were).
+  const wasNearBottom =
+    messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+  let appended = false;
   const serverMessages = state.messages || [];
   for (const m of serverMessages) {
     if (renderedMessageIds.has(m.id)) continue;
@@ -157,8 +182,11 @@ function render(state) {
     }
     renderedMessageIds.add(m.id);
     messagesEl.appendChild(renderMessage(m));
+    appended = true;
   }
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (appended && wasNearBottom) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
 }
 
 function renderMessage(m) {

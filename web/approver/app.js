@@ -35,18 +35,44 @@ async function refresh() {
   }
 }
 
+// Map of approvalId -> card element so we can reconcile without nuking
+// inputs the user is typing into.
+const cardsById = new Map();
+
 function render(list) {
   if (list.length === 0) {
+    cardsById.clear();
     contentEl.innerHTML = `<div class="empty">No pending approvals for <strong>${escape(
       currentGroup
     )}</strong>.</div>`;
     return;
   }
 
-  contentEl.innerHTML = "";
+  // Drop the empty-state placeholder if present.
+  const placeholder = contentEl.querySelector(".empty");
+  if (placeholder) {
+    contentEl.innerHTML = "";
+    cardsById.clear();
+  }
+
   list.sort((a, b) => a.createdAtMs - b.createdAtMs);
+  const seen = new Set();
+
   for (const item of list) {
-    contentEl.appendChild(renderCard(item));
+    seen.add(item.approvalId);
+    if (!cardsById.has(item.approvalId)) {
+      const card = renderCard(item);
+      cardsById.set(item.approvalId, card);
+      contentEl.appendChild(card);
+    }
+  }
+
+  // Remove any cards whose approval is no longer pending.
+  for (const [id, card] of cardsById) {
+    if (!seen.has(id)) {
+      card.remove();
+      cardsById.delete(id);
+    }
   }
 }
 
