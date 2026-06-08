@@ -1,5 +1,5 @@
 // Delivery-domain mock data. Same delivery_id always returns the same record
-// so the demo is reproducible without a database. Customer-side data lives in
+// so calls are reproducible without a database. Customer-side data lives in
 // customer-svc; we only carry IDs across the boundary.
 
 export interface Delivery {

@@ -30,6 +30,25 @@ Once everything is green:
 - Services portal (per-service ops views): <http://localhost:3001/services>
 - Restate admin (durable journals, deployments): <http://localhost:9070/ui/>
 
+## Resilience
+
+Every process below (including `restate-server` itself) is killable from the supervisor TUI with a single keypress. Try it — kill any one of them mid-request and the system either:
+
+- **Queues durably.** If Restate is up but a particular service is down, calls bound for that service sit in Restate's ingress until the service comes back, then resolve normally. Nothing is lost.
+- **Resumes from journal.** If a service mid-handler dies and comes back, Restate replays the journal up to the suspension point; the same invocation continues running on the new process *from exactly the line of code it stopped on*. The clearest case: a `Session.sendMessage` invocation suspended on an approval awakeable. Kill `ops-agent` while it's waiting, the approval still completes, the handler resumes on restart.
+- **Loses presentation only, never state.** If the BFF is killed, the chat UI goes dark briefly. Restarting the BFF brings the UI back to identical state because the BFF holds no state — every render is a fresh read from Restate.
+
+The one exception is the supervisor itself, which has to be running for there to be anything to spawn. Quit it with `q` and every child shuts down cleanly with it.
+
+## Things to try
+
+Once the operator UI is open at <http://localhost:3001/operator>:
+
+- *"What happened with delivery #12345?"* — the agent runs a multi-step investigation (delivery lookup → escalation history → customer profile → summary). Open `/ops/gateway` while it runs and you'll see four rows cluster together as one agent turn (a fresh trace id is minted per `Session.sendMessage` and threaded through every downstream call).
+- *"Apologize and credit $20 to the customer of delivery #12345"* — the credit triggers the approval policy; the agent suspends on an awakeable. Switch to `/approver` (group `finance-leads`), click Approve, and the suspended handler resumes from journal, retries the gateway call with the approval token, and finishes the turn.
+- *"find similar complaints from customer at 555-867-5309"* — the PII guardrail blocks the call. The chat shows a "Request review from ops-managers" button; click it, approve in the approver UI under the `ops-managers` group, and the agent retries with an appeal token that bypasses just the PII middleware for that one call.
+- *"check merchants for deliveries 12345, 12346, 12399"* — fires `merchant_status` calls in sequence. The tool's per-tenant cap is 6/min; drop it to 2 via the `−` buttons in `/ops/gateway` and the next bigger burst will visibly drain the bucket to 0 and trickle back as the gateway durably sleeps each queued call.
+
 ## Architecture
 
 ```mermaid
@@ -113,8 +132,8 @@ merchant_status"]:::svc
 
 - Every box is a separate **OS process**. `lsof -nP -iTCP -sTCP:LISTEN` shows one TCP listener per port.
 - The **Restate runtime is the layer underneath everything** — every arrow above actually traverses Restate's ingress at runtime, which is how the calls become durable, journaled, and replayable. We don't draw arrows in and out of the runtime because it would clutter every edge without adding information; the durability is a property of the substrate.
-- The two **BFF → backend** arrows shown are the chat-app-level interfaces: the operator side of the demo (operator UI ↔ Session VO) and the approver side (approver UI ↔ ApprovalService + indexes). The BFF also reads ops-view state from every other service to render `/ops/<svc>` pages — that's plumbing for the inspection UI, not part of the architecture, so it's not drawn.
-- The **agent → gateway → fan-out** is the heart of the demo. Every external call the agent makes flows through `Gateway.callTool` or `Gateway.callLLM`; the gateway then runs middleware (PII, approval policy, rate limit) and dispatches to a tool service, the LLM service, or the approval service depending on the situation.
+- The two **BFF → backend** arrows shown are the chat-app-level interfaces: the operator UI ↔ Session VO and the approver UI ↔ ApprovalService + indexes. The BFF also reads ops-view state from every other service to render `/ops/<svc>` pages — that's plumbing for the inspection UI, not part of the architecture, so it's not drawn.
+- The **agent → gateway → fan-out** is the central pattern. Every external call the agent makes flows through `Gateway.callTool` or `Gateway.callLLM`; the gateway then runs middleware (PII, approval policy, rate limit) and dispatches to a tool service, the LLM service, or the approval service depending on the situation.
 - The **dotted arrows** (`guardrails → gateway`, `insights → gateway`) are cross-cutting LLM calls — the PII classifier and the semantic-search tool route their *own* LLM access back through `Gateway.callLLM` so every LLM call gets the same policy/cost/audit treatment.
 - A supervisor process spawns and kills every box above (see [Running it](#running-it)) but it's operational tooling rather than part of the architecture, so it's not drawn here.
 
@@ -129,8 +148,8 @@ merchant_status"]:::svc
 | **llm-svc** (`:9087`) | The single backend for every LLM call in the system. Stub mode (default) returns deterministic responses; live mode (with `ANTHROPIC_API_KEY`) calls the Anthropic SDK. Same surface either way. | `restate.service` with `complete`, `purposeCounters`, `mode` handlers |
 | **guardrails** (`:9084`) | Outbound safety checks called from gateway middlewares. Today: regex PII pre-screen; live mode would swap in a real classifier. | `PIIGuardrail` service |
 | **delivery-svc** (`:9081`) | Read-only delivery-domain tools: `delivery_lookup`, `escalation_history`. | `DeliveryLookup` + `EscalationHistory` services |
-| **customer-svc** (`:9082`) | Customer-domain reads + writes: `customer_lookup`, `apply_credit`, `customer_outreach`. `apply_credit` carries a deliberately buggy mode (`BUGGY_MODE=1`) to demo pause-and-resume. | `CustomerLookup`, `ApplyCredit`, `CustomerOutreach` services |
-| **insights-svc** (`:9086`) | Analytical tools: `semantic_search` (LLM-backed; 5¢/call) and `merchant_status` (tightly rate-limited at 6/min — drives the queueing demo). | `SemanticSearch`, `MerchantStatus` services |
+| **customer-svc** (`:9082`) | Customer-domain reads + writes: `customer_lookup`, `apply_credit`, `customer_outreach`. `apply_credit` carries a deliberately buggy mode (`BUGGY_MODE=1`) that exercises the retry-then-pause-then-resume path. | `CustomerLookup`, `ApplyCredit`, `CustomerOutreach` services |
+| **insights-svc** (`:9086`) | Analytical tools: `semantic_search` (LLM-backed; 5¢/call) and `merchant_status` (tightly rate-limited at 6/min so the queueing path stays exercised). | `SemanticSearch`, `MerchantStatus` services |
 
 Each tool service **self-registers** its tools with the gateway's `ToolRegistry` at startup (see `services/shared/src/self-register.ts`). Adding a new tool is one new file plus a line in its `selfRegisterTools(...)` call — no agent or gateway code changes.
 
@@ -153,7 +172,7 @@ Removing the gateway would mean re-implementing every one of those concerns in e
 
 ## Restate features exercised
 
-| Feature | Where in the demo |
+| Feature | Where in the platform |
 |---|---|
 | **Virtual Objects** (keyed state + serialized handlers) | Session, ToolRegistry, CostLedger, TokenBucket, ApprovalService, PendingApprovalsIndex, DecidedApprovalsIndex |
 | **Awakeables** | `Session.sendMessage` suspends on an awakeable; `ApprovalService.respond` resolves it. Same pattern for appeals. |
@@ -164,7 +183,7 @@ Removing the gateway would mean re-implementing every one of those concerns in e
 | **Retry policy + `onMaxAttempts: pause`** | `apply_credit` with `BUGGY_MODE=1`: retries 3×, pauses. Restart the service with the fix; resume from journal. |
 | **Trace propagation** | `CallerIdentity.traceId` minted per `Session.sendMessage`, threaded through every downstream call. |
 | **Deterministic primitives** | `ctx.rand.uuidv4()`, `ctx.date.now()` — message ids and timestamps survive replay. |
-| **Durable execution across process death** | The "pull every pin" runbook in [DEMO.md](./DEMO.md). |
+| **Durable execution across process death** | Kill any service from the supervisor TUI mid-request; restart it and the request resumes from journal. See [Resilience](#resilience). |
 
 ## Repo layout
 
@@ -201,8 +220,4 @@ For a code review:
 
 ## Stub vs live LLM mode
 
-LLM calls today use deterministic stubs (`services/llm-svc/src/stubs.ts`) so the demo is reproducible. Setting `ANTHROPIC_API_KEY` switches `llm-svc` into live mode, swapping in real Anthropic SDK calls — the surface (`Gateway.callLLM`) doesn't change either way. That's the point of routing every LLM call through the gateway: stub and live mode are interchangeable from every caller's perspective.
-
-## What to read next
-
-[**DEMO.md**](./DEMO.md) — the narrative walkthrough for tomorrow's review. Story-level: what to type, what to watch for, what each scene proves.
+LLM calls today use deterministic stubs (`services/llm-svc/src/stubs.ts`) for reproducible local development. Setting `ANTHROPIC_API_KEY` switches `llm-svc` into live mode, swapping in real Anthropic SDK calls — the surface (`Gateway.callLLM`) doesn't change either way. That's the point of routing every LLM call through the gateway: stub and live mode are interchangeable from every caller's perspective.

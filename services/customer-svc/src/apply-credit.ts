@@ -8,8 +8,8 @@ import { bumpToolCount, type ToolPayload, type ToolResult } from "@dashops/share
 // not TerminalError), and the service is configured with maxAttempts=3 and
 // onMaxAttempts=pause — so Restate retries 3x, then pauses the invocation.
 // The paused invocation is what we resume after restarting the tool with
-// BUGGY_MODE off, demonstrating Stephan's pitch:
-//   'take a failed invocation, inject a patch, resume from exactly that point'.
+// BUGGY_MODE off: take a failed invocation, inject a patch, resume from
+// exactly that point — no work redone.
 export const applyCredit = restate.service({
   name: "ApplyCredit",
   handlers: {

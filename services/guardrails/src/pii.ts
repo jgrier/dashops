@@ -3,7 +3,7 @@ import { PLATFORM_IDENTITY, type CallLLMRequest, type CallLLMResponse } from "@d
 
 // PII guardrail: inspects the JSON-serialized params of a pending tool call
 // and flags if PII patterns are detected. Today the implementation is a
-// regex pre-screen; tomorrow (ANTHROPIC_API_KEY set) it's an LLM classifier.
+// regex pre-screen; in live mode (ANTHROPIC_API_KEY set) it's an LLM classifier.
 // Either way the call routes through the gateway's callLLM handler.
 //
 // Cost attribution: this is a cross-cutting platform concern, not something

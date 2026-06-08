@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bring the entire DashOps demo up in the background.
+# Bring the entire DashOps stack up in the background.
 # Logs go to /tmp/dashops-*.log.
 set -euo pipefail
 
@@ -61,7 +61,7 @@ All up.
 
   Restate admin UI : http://localhost:9070
   Note: this script is the legacy entry point. The recommended way to run
-  the demo is the supervisor: `npm run dev:supervisor` from the repo root.
+  the stack is the supervisor: `npm run dev:supervisor` from the repo root.
   All browser UIs now live at http://localhost:3001/* (operator, approver,
   services, supervisor) — there is no longer a web bridge on :3000.
 

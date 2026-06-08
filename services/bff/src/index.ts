@@ -845,7 +845,7 @@ async function renderLlmSvcPage(): Promise<string> {
 
 // Shared shell + topnav + section styling. Each /ops/<svc> page slots its
 // body into this. Keeping the styles inline (rather than a stylesheet) so
-// the BFF is the only thing serving HTML in the demo.
+// the BFF is the only thing serving HTML in the system.
 function renderOpsShell(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">

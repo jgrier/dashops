@@ -1,5 +1,5 @@
 // In-process ring buffer of recent Gateway.callTool outcomes. Surfaced by
-// the gateway ops view (:9180) so the demo can point at one screen and see
+// the gateway ops view so an operator can see, on one screen,
 // every routing decision in the last minute.
 //
 // Process-local; resets on restart. Writes are made deterministic by

@@ -44,7 +44,7 @@ export const rateLimitMW: Middleware = {
       if (!res.acquired) {
         // Bubble up — gateway will sleep and re-check the whole chain from
         // this middleware. Earlier buckets may have to be reacquired; for
-        // demo purposes the over-acquire is acceptable.
+        // simplicity here we accept the over-acquire.
         return { kind: "wait", ms: res.waitMs };
       }
     }

@@ -19,7 +19,7 @@ export interface ApprovalPolicy {
 // risk is the credit itself; the apology message is benign once the money has
 // been blessed.
 //
-// ops-managers is still demoable via the PII appeal path (see
+// ops-managers is still exercised via the PII appeal path (see
 // services/gateway/src/middlewares/pii-guardrail.ts — block_appealable
 // escalates to ops-managers).
 export const policies: Record<string, ApprovalPolicy> = {

@@ -2,7 +2,7 @@
   "name": "dashops",
   "version": "0.1.0",
   "private": true,
-  "description": "DashOps — a food-delivery-flavored agent platform demo on Restate. Operator agent + agent gateway + async human-in-the-loop approval.",
+  "description": "DashOps — a food-delivery-flavored agent platform on Restate. Operator agent + agent gateway + async human-in-the-loop approval.",
   "workspaces": [
     "services/*"
   ],

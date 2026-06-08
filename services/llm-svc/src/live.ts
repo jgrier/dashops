@@ -1,5 +1,5 @@
 // Live LLM caller — invoked when ANTHROPIC_API_KEY is set. Skeleton today;
-// the SDK call gets wired once the demo wants to flip from deterministic
+// the SDK call gets wired in once we want to flip from deterministic
 // to real model output. The key insight that makes this commit valuable
 // even before live mode lands: the gateway sits in front of this call,
 // so every guardrail/rate-limit/cost-tracking concern is policy-applied

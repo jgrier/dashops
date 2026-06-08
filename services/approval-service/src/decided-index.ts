@@ -17,7 +17,8 @@ export const decidedApprovalsIndex = restate.object({
     ): Promise<{ ok: true }> => {
       const list = (await ctx.get<DecidedApprovalSummary[]>("entries")) ?? [];
       list.push(entry);
-      // Trim the oldest entries; demo state, not durable analytics warehouse.
+      // Trim the oldest entries; this index is for recent-decision
+      // inspection, not a long-term analytics store.
       ctx.set("entries", list.slice(-MAX_PER_GROUP));
       return { ok: true };
     },

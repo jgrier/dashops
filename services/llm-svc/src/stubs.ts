@@ -1,6 +1,6 @@
 // Deterministic stub responses for each LLM purpose. These reproduce what
 // the in-process planner, PII regex, and canned semantic-search returned
-// before the refactor — same demo behavior, but now centralized so the
+// before the refactor — same behavior, but now centralized so the
 // gateway sits in front of every LLM-shaped call.
 //
 // When ANTHROPIC_API_KEY is set, live.ts takes over (Phase 6); these stubs
@@ -71,7 +71,8 @@ function planNext(messages: SessionMessage[]): LLMStep {
   const creditAmountMatch =
     text.match(/\$(\d+(?:\.\d{1,2})?)/) ?? text.match(/(\d+(?:\.\d{1,2})?)\s*dollars?/i);
 
-  // Merchant-batch flow (rate-limit demo)
+  // Merchant-batch flow — fires many merchant_status calls in sequence
+  // so the per-tenant-tool rate limit (6/min by default) actually queues.
   if (merchantBatchMatch) {
     const ids = merchantBatchMatch[1].split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     const merchantIdForDelivery: Record<string, string> = {
@@ -318,11 +319,11 @@ function piiStub(req: CallLLMRequest): CallLLMResponse {
         : undefined,
       detected: flagged ? detected : undefined,
     },
-    // Notional cost for the demo: regex is free in stub mode, but live mode
-    // (Anthropic classifier call) would charge a small amount per check. We
-    // model it as 1¢ so the cost ledger reflects that every guardrail
-    // invocation has a price — without that, frequent PII checks vanish
-    // from the per-tenant bill.
+    // Notional cost: regex is free in stub mode, but live mode (Anthropic
+    // classifier call) would charge a small amount per check. We model it
+    // as 1¢ so the cost ledger reflects that every guardrail invocation
+    // has a price — without that, frequent PII checks vanish from the
+    // per-tenant bill.
     costCents: 1,
     mode: "stub",
   };
@@ -330,7 +331,7 @@ function piiStub(req: CallLLMRequest): CallLLMResponse {
 
 // -- Semantic search -------------------------------------------------------
 // Returns canned "similar complaints". Live mode would call an embedding-based
-// retrieval LLM. Cost is reported here so the cost-ledger demo lights up.
+// retrieval LLM. Cost is reported here so the cost ledger captures it.
 
 function semanticSearchStub(req: CallLLMRequest): CallLLMResponse {
   const query = String(req.params?.query ?? "");

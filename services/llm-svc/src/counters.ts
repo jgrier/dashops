@@ -1,5 +1,5 @@
 // Per-purpose invocation counters for the llm-svc ops view. Process-local;
-// resets on restart. Lets the demo show "the planner has called 14 times,
+// resets on restart. Surfaces "the planner has called 14 times,
 // the PII classifier 3 times" on one screen.
 
 const counts = new Map<string, number>();

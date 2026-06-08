@@ -204,7 +204,7 @@ export interface DecidedApprovalSummary {
 // ----- LLM gateway contracts ------------------------------------------------
 // Every LLM-shaped call in DashOps goes through the gateway's callLLM
 // handler, which dispatches to LLMService. Stub mode preserves today's
-// deterministic demo behavior; live mode (ANTHROPIC_API_KEY set) calls
+// deterministic stub behavior; live mode (ANTHROPIC_API_KEY set) calls
 // @anthropic-ai/sdk. The gateway records cost, logs the call, and runs
 // LLM-specific middleware (rate limit etc.) on the way through.
 
