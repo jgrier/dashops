@@ -421,22 +421,21 @@ function renderBucketsSection(tools: ToolRegistration[] | null, buckets: Array<B
     };
   });
 
-  // Sort: most-depleted first so the interesting ones float to the top.
-  // Untouched buckets (effectively "full, idle") go to the bottom.
-  rows.sort((a, b) => {
-    if (a.touched !== b.touched) return a.touched ? -1 : 1;
-    return a.fillPct - b.fillPct;
-  });
+  // Stable alphabetical order — sorting by fill % made rows jump around
+  // both on the 3s meta-refresh and after every -/+ click, which made the
+  // capacity editor unusable. The fill bar already makes draining buckets
+  // visually obvious; no need to also resort them.
+  rows.sort((a, b) => a.name.localeCompare(b.name));
 
   const html = rows
     .map(
-      (r) => `<tr>
+      (r) => `<tr data-tool="${escapeHtml(r.name)}">
         <td><span class="chip">${escapeHtml(r.name)}</span></td>
         <td>${fillBar(r.tokens, r.cap)}</td>
         <td class="counter">${r.tokens.toFixed(1)} / ${r.cap}</td>
         <td>
           <button onclick="dashops.rl('${escapeHtml(r.name)}', -1)" style="background:#2a2a2a;color:#e0e0e0;border:1px solid #444;border-radius:3px;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1">−</button>
-          <span class="muted" style="display:inline-block;min-width:54px;text-align:center">${r.cap}/min</span>
+          <span class="rl-cap muted" style="display:inline-block;min-width:54px;text-align:center" data-cap="${r.cap}">${r.cap}/min</span>
           <button onclick="dashops.rl('${escapeHtml(r.name)}', +1)" style="background:#2a2a2a;color:#e0e0e0;border:1px solid #444;border-radius:3px;width:22px;height:22px;cursor:pointer;font-size:13px;line-height:1">+</button>
         </td>
         <td class="muted">${r.eta}</td>
@@ -453,26 +452,23 @@ function renderBucketsSection(tools: ToolRegistration[] | null, buckets: Array<B
      <script>
        window.dashops = window.dashops || {};
        window.dashops.rl = async function(tool, delta) {
-         // Find this row's current cap from the displayed text. The "/min"
-         // span lives between the - and + buttons; parse it.
-         const btns = document.querySelectorAll('button');
-         let curr = null;
-         for (const b of btns) {
-           if (b.outerHTML.includes(tool) && b.nextElementSibling) {
-             curr = parseInt(b.nextElementSibling.textContent, 10);
-             break;
-           }
-         }
-         if (!curr) return;
+         // Read current cap from the row's data attribute and bump it.
+         // Update the DOM optimistically so the row doesn't move and the
+         // next +/- click hits the right number even before the request
+         // round-trips. The 3s meta-refresh will reconcile against the
+         // server state.
+         const row = document.querySelector('tr[data-tool="' + tool + '"]');
+         if (!row) return;
+         const capEl = row.querySelector('.rl-cap');
+         const curr = parseInt(capEl.getAttribute('data-cap'), 10);
          const next = Math.max(1, curr + delta * (curr >= 20 ? 5 : 1));
-         await fetch('/api/tools/' + encodeURIComponent(tool) + '/ratelimit', {
+         capEl.setAttribute('data-cap', String(next));
+         capEl.textContent = next + '/min';
+         fetch('/api/tools/' + encodeURIComponent(tool) + '/ratelimit', {
            method: 'POST',
            headers: { 'content-type': 'application/json' },
            body: JSON.stringify({ perMinute: next }),
-         });
-         // The page meta-refreshes every 3s — but trigger an immediate one so
-         // the change shows up without waiting.
-         location.reload();
+         }).catch(() => {});
        };
      </script>`
   );
