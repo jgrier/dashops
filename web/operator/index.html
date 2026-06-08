@@ -100,6 +100,26 @@
       font-size: 12.5px;
     }
     .msg.system    { background: var(--system-bg); color: var(--system-fg); font-size: 13px; }
+    /* Inline action node attached to the system "Blocked by ..." message
+       when the session is blocked_appealable. Replaces the old top banner. */
+    .appeal-action {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 0 0 0;
+    }
+    .appeal-action button {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .appeal-action button:hover { filter: brightness(1.1); }
+    .appeal-action button:disabled { opacity: 0.5; cursor: not-allowed; }
     .msg .role {
       font-size: 10px;
       text-transform: uppercase;
@@ -280,15 +300,6 @@
 
   <div id="pending-banner" style="display:none; padding:10px 20px; background:#3a2a05; color:#ffd28e; font-size:13px; border-bottom:1px solid #4a3a15;">
     <strong>⏸ Waiting on approval</strong> from <span id="pending-group"></span>: <span id="pending-summary"></span>
-  </div>
-
-  <div id="appeal-banner" style="display:none; padding:10px 20px; background:#3a1f1f; color:#ffb0a0; font-size:13px; border-bottom:1px solid #4a2828; display:flex; align-items:center; gap:12px;">
-    <div style="flex:1">
-      <strong>⚠ Blocked by <span id="appeal-source"></span>:</strong> <span id="appeal-reason"></span>
-    </div>
-    <button id="appeal-btn" style="background:#f55b35;color:#fff;border:0;border-radius:4px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;">
-      Request review from <span id="appeal-group"></span>
-    </button>
   </div>
 
   <main id="messages"></main>

@@ -1,6 +1,7 @@
-// Approver UI — polls pending approvals for a selected group; click to approve/reject.
-// Quick mock "user identity": pick a name on first load so the approve action
-// is attributable in the audit trail.
+// Approver UI — polls pending approvals per group, shown as a tab strip
+// at the top with live counts. Clicking a tab switches the list below.
+// Quick mock "user identity": pick a name on first load so the approve
+// action is attributable in the audit trail.
 
 const approverUserId = (() => {
   const k = "dashops_approver_user";
@@ -15,24 +16,62 @@ const approverUserId = (() => {
 document.getElementById("user-badge").textContent = "user: " + approverUserId;
 
 const contentEl = document.getElementById("content");
-const groupSelect = document.getElementById("group-select");
+const tabsEl = document.getElementById("group-tabs");
 const toastEl = document.getElementById("toast");
 
-let currentGroup = groupSelect.value;
-groupSelect.addEventListener("change", () => {
-  currentGroup = groupSelect.value;
-  refresh();
-});
+const GROUPS = ["finance-leads", "ops-managers"];
+const GROUP_KEY = "dashops_approver_group";
+let currentGroup = GROUPS.includes(localStorage.getItem(GROUP_KEY))
+  ? localStorage.getItem(GROUP_KEY)
+  : GROUPS[0];
 
-async function refresh() {
+// Per-group pending list cached from the most recent poll. Drives the
+// count badge in the tab strip and the cards in the active group view.
+const pendingByGroup = new Map(GROUPS.map((g) => [g, []]));
+
+function switchGroup(g) {
+  if (currentGroup === g) return;
+  currentGroup = g;
+  localStorage.setItem(GROUP_KEY, g);
+  cardsById.clear();
+  contentEl.innerHTML = "";
+  renderTabs();
+  render(pendingByGroup.get(currentGroup) || []);
+}
+
+function renderTabs() {
+  tabsEl.innerHTML = "";
+  for (const g of GROUPS) {
+    const tab = document.createElement("button");
+    tab.className = "group-tab" + (g === currentGroup ? " active" : "");
+    const label = document.createElement("span");
+    label.textContent = g;
+    tab.appendChild(label);
+    const count = (pendingByGroup.get(g) || []).length;
+    const badge = document.createElement("span");
+    badge.className = "count" + (count === 0 ? " zero" : "");
+    badge.textContent = count;
+    tab.appendChild(badge);
+    tab.addEventListener("click", () => switchGroup(g));
+    tabsEl.appendChild(tab);
+  }
+}
+
+async function pollGroup(g) {
   try {
-    const r = await fetch(`/api/approvals/pending?group=${encodeURIComponent(currentGroup)}`);
+    const r = await fetch(`/api/approvals/pending?group=${encodeURIComponent(g)}`);
     if (!r.ok) return;
     const list = await r.json();
-    render(Array.isArray(list) ? list : []);
-  } catch (e) {
-    // ignore
+    pendingByGroup.set(g, Array.isArray(list) ? list : []);
+  } catch {
+    // ignore transient errors
   }
+}
+
+async function refresh() {
+  await Promise.all(GROUPS.map(pollGroup));
+  renderTabs();
+  render(pendingByGroup.get(currentGroup) || []);
 }
 
 // Map of approvalId -> card element so we can reconcile without nuking
@@ -67,7 +106,6 @@ function render(list) {
     }
   }
 
-  // Remove any cards whose approval is no longer pending.
   for (const [id, card] of cardsById) {
     if (!seen.has(id)) {
       card.remove();
@@ -137,5 +175,6 @@ function escape(s) {
   );
 }
 
+renderTabs();
 refresh();
 setInterval(refresh, 1500);

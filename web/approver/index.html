@@ -162,6 +162,50 @@
     .topnav a { color: #9ba6b3; text-decoration: none; }
     .topnav a:hover { color: #f55b35; }
     .topnav a.active { color: #f55b35; font-weight: 600; }
+    /* Approver-group tabs (replaces the old <select>). Mirrors the
+       operator UI's session-tab look for consistency. */
+    #group-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 8px 20px 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .group-tab {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+      background: transparent;
+      color: var(--fg-muted);
+      border: 1px solid transparent;
+      border-bottom: 0;
+      border-radius: 6px 6px 0 0;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .group-tab:hover { color: var(--fg); }
+    .group-tab.active {
+      color: var(--fg);
+      background: var(--bg);
+      border-color: var(--border);
+      position: relative;
+      top: 1px;
+    }
+    .group-tab .count {
+      display: inline-block;
+      min-width: 18px;
+      text-align: center;
+      padding: 1px 6px;
+      border-radius: 9px;
+      font-size: 11px;
+      background: rgba(255,255,255,0.06);
+      color: var(--fg-muted);
+    }
+    .group-tab.active .count { background: var(--accent); color: #fff; }
+    .group-tab .count.zero { opacity: 0.5; }
   </style>
 </head>
 <body>
@@ -174,11 +218,9 @@
     <h1>DashOps</h1>
     <span class="badge">approver</span>
     <span class="badge" id="user-badge">user: -</span>
-    <select id="group-select">
-      <option value="finance-leads">finance-leads</option>
-      <option value="ops-managers">ops-managers</option>
-    </select>
   </header>
+
+  <div id="group-tabs"></div>
 
   <main id="content"></main>
 

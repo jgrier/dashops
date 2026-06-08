@@ -84,10 +84,6 @@ formEl.addEventListener("submit", (e) => {
   sendMessage(msg);
 });
 
-document.getElementById("appeal-btn").addEventListener("click", async () => {
-  await fetch(`/api/sessions/${activeSessionId}/appeal`, { method: "POST" });
-});
-
 document.querySelectorAll(".seed-chip").forEach((chip) => {
   chip.addEventListener("click", () => {
     inputEl.value = chip.dataset.seed;
@@ -279,15 +275,34 @@ function renderActive(state) {
     banner.style.display = "none";
   }
 
-  // appeal banner
-  const appealBanner = document.getElementById("appeal-banner");
+  // Inline appeal action — attached to the system "Blocked by ..." message
+  // that ops-agent already wrote, so it sits with its context. Removed
+  // when pendingAppeal clears (i.e. the appeal was filed or resolved).
+  const existingAction = messagesEl.querySelector(".appeal-action");
   if (state.status === "blocked_appealable" && state.pendingAppeal) {
-    appealBanner.style.display = "block";
-    document.getElementById("appeal-source").textContent = state.pendingAppeal.blockSource;
-    document.getElementById("appeal-reason").textContent = state.pendingAppeal.blockReason;
-    document.getElementById("appeal-group").textContent = state.pendingAppeal.approverGroup;
-  } else {
-    appealBanner.style.display = "none";
+    const blockNodes = messagesEl.querySelectorAll('.msg.system[data-block="1"]');
+    const target = blockNodes.length ? blockNodes[blockNodes.length - 1] : null;
+    if (target && !target.querySelector(".appeal-action")) {
+      if (existingAction) existingAction.remove();   // moved to a different message
+      const action = document.createElement("div");
+      action.className = "appeal-action";
+      const btn = document.createElement("button");
+      btn.textContent = `Request review from ${state.pendingAppeal.approverGroup}`;
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Submitting…";
+        try {
+          await fetch(`/api/sessions/${activeSessionId}/appeal`, { method: "POST" });
+        } catch {
+          btn.disabled = false;
+          btn.textContent = `Request review from ${state.pendingAppeal.approverGroup}`;
+        }
+      });
+      action.appendChild(btn);
+      target.appendChild(action);
+    }
+  } else if (existingAction) {
+    existingAction.remove();
   }
 
   // messages — append new ones only. Reconcile optimistic renders against
@@ -363,6 +378,11 @@ function renderMessage(m) {
     r.className = "tool-result";
     r.textContent = JSON.stringify(m.toolResult, null, 2);
     div.appendChild(r);
+  }
+  // Tag the system "Blocked by ..." notice so the appeal action can be
+  // attached directly to it rather than floating at the bottom of the chat.
+  if (m.role === "system" && m.content.startsWith("Blocked by ")) {
+    div.dataset.block = "1";
   }
   return div;
 }
