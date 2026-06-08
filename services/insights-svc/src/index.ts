@@ -1,64 +1,25 @@
 import * as restate from "@restatedev/restate-sdk";
-import { selfRegisterTools, serveOpsView, readToolCounters } from "@dashops/shared";
+import { selfRegisterTools, readToolCounters, type ToolCounterSnapshot } from "@dashops/shared";
 import { semanticSearch } from "./semantic-search.js";
 import { merchantStatus } from "./merchant-status.js";
 
 const port = parseInt(process.env.PORT ?? "9086", 10);
-const uiPort = parseInt(process.env.UI_PORT ?? String(port + 100), 10);
+const ownedTools = ["semantic_search", "merchant_status"];
+
+const ops = restate.service({
+  name: "InsightsSvc",
+  handlers: {
+    toolCounters: async (_ctx: restate.Context): Promise<ToolCounterSnapshot[]> => {
+      return readToolCounters(ownedTools);
+    },
+  },
+});
 
 restate.serve({
-  services: [semanticSearch, merchantStatus],
+  services: [semanticSearch, merchantStatus, ops],
   port,
 });
 console.log(`insights-svc listening on :${port}`);
-
-const ownedTools = ["semantic_search", "merchant_status"];
-
-serveOpsView({
-  port: uiPort,
-  serviceName: "insights-svc",
-  role: "Analytical/external lookups: similar-complaint search and merchant status.",
-  sections: [
-    {
-      title: "Tools served",
-      render: () => {
-        const snaps = readToolCounters(ownedTools);
-        const rows = snaps
-          .map(
-            (s) => `<tr>
-              <td><span class="chip">${s.name}</span></td>
-              <td class="counter">${s.count}</td>
-              <td class="muted">${
-                s.lastInvokedAt ? new Date(s.lastInvokedAt).toLocaleTimeString() : "—"
-              }</td>
-            </tr>`
-          )
-          .join("");
-        return `<table>
-          <thead><tr><th>tool</th><th>invocations</th><th>last call</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
-      },
-    },
-    {
-      title: "Notable behavior",
-      render: () => `<table>
-        <tr><td><span class="chip">semantic_search</span></td>
-            <td class="muted">5¢ per call — drives the cost-ledger demo</td></tr>
-        <tr><td><span class="chip">merchant_status</span></td>
-            <td class="muted">Tightly rate-limited at 6/min — drives the queueing demo</td></tr>
-      </table>`,
-    },
-    {
-      title: "Service info",
-      render: () => `<table>
-        <tr><td class="muted">restate port</td><td><code>:${port}</code></td></tr>
-        <tr><td class="muted">ops view port</td><td><code>:${uiPort}</code></td></tr>
-        <tr><td class="muted">restate services</td><td><code>SemanticSearch</code>, <code>MerchantStatus</code></td></tr>
-      </table>`,
-    },
-  ],
-});
 
 selfRegisterTools([
   {

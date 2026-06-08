@@ -2,7 +2,7 @@ import * as restate from "@restatedev/restate-sdk";
 import type { CallLLMRequest, CallLLMResponse } from "@dashops/shared";
 import { runStub } from "./stubs.js";
 import { runLive } from "./live.js";
-import { bumpPurposeCount } from "./counters.js";
+import { bumpPurposeCount, readPurposeCounters, type PurposeSnapshot } from "./counters.js";
 
 const LIVE_MODE = !!process.env.ANTHROPIC_API_KEY;
 
@@ -20,6 +20,14 @@ export const llmService = restate.service({
       const result = LIVE_MODE ? await runLive(req) : runStub(req);
       bumpPurposeCount(req.purpose, result.costCents);
       return result;
+    },
+
+    // ---- Observability (narrow data reads; no rendering) ---------------
+    purposeCounters: async (_ctx: restate.Context): Promise<PurposeSnapshot[]> => {
+      return readPurposeCounters();
+    },
+    mode: async (_ctx: restate.Context): Promise<{ live: boolean }> => {
+      return { live: LIVE_MODE };
     },
   },
 });

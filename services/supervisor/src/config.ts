@@ -14,7 +14,6 @@ export interface ServiceSpec {
   //   (b) POST to admin /deployments after start
   port?: number;
   // Per-service ops view port. Surfaced in the UI as a clickable link.
-  uiPort?: number;
   // Skip the admin /deployments register call (used for restate-server itself).
   registerDeployment?: boolean;
   // One-line description shown in the UI.
@@ -36,7 +35,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9080,
-    uiPort: 9180,
     registerDeployment: true,
     role: "Routes every agent ↔ tool/LLM call. Middleware, cost ledger, recent-calls log.",
   },
@@ -46,7 +44,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9081,
-    uiPort: 9181,
     registerDeployment: true,
     role: "delivery_lookup, escalation_history",
   },
@@ -56,7 +53,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9082,
-    uiPort: 9182,
     registerDeployment: true,
     role: "customer_lookup, apply_credit, customer_outreach",
   },
@@ -66,7 +62,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9083,
-    uiPort: 9183,
     registerDeployment: true,
     role: "Per-session VOs (Session). Chat UIs moved to the supervisor BFF.",
   },
@@ -76,7 +71,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9084,
-    uiPort: 9184,
     registerDeployment: true,
     role: "PIIGuardrail (regex pre-screen / LLM classifier in live mode)",
   },
@@ -86,7 +80,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9085,
-    uiPort: 9185,
     registerDeployment: true,
     role: "Async human-in-the-loop approvals + appeals; pending + decided indexes",
   },
@@ -96,7 +89,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9086,
-    uiPort: 9186,
     registerDeployment: true,
     role: "semantic_search, merchant_status",
   },
@@ -106,7 +98,6 @@ export const services: ServiceSpec[] = [
     command: "npm",
     args: ["run", "dev"],
     port: 9087,
-    uiPort: 9187,
     registerDeployment: true,
     role: "Single backend for every LLM call (gateway-routed)",
   },

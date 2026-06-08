@@ -16,7 +16,7 @@ kill_listener() {
 }
 
 echo "== Stopping all DashOps services =="
-for port in 3001 9080 9081 9082 9083 9084 9085 9086 9087 9180 9181 9182 9183 9184 9185 9186 9187; do
+for port in 3001 9080 9081 9082 9083 9084 9085 9086 9087; do
   kill_listener "$port"
 done
 

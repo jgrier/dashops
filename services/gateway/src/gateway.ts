@@ -12,7 +12,7 @@ import type { CostEntry } from "./cost-ledger.js";
 import { gatewayMiddlewares } from "./middlewares/index.js";
 import type { MiddlewareContext, MiddlewareResult } from "./middlewares/types.js";
 import { fingerprint } from "./policies.js";
-import { recordCall } from "./calls-log.js";
+import { recordCall, recentCalls, type CallLogEntry } from "./calls-log.js";
 
 // The gateway: every agent ↔ tool call passes through here.
 // Pipeline:
@@ -209,6 +209,13 @@ export const gateway = restate.service({
       });
 
       return result;
+    },
+
+    // ---- Observability ---------------------------------------------------
+    // Narrow data-only read. The BFF queries this when rendering the
+    // gateway ops page; no HTML lives in this service.
+    recentCalls: async (_ctx: restate.Context): Promise<CallLogEntry[]> => {
+      return recentCalls();
     },
   },
 });

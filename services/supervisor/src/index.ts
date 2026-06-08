@@ -110,7 +110,6 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         role: s.spec.role,
         cwd: s.spec.cwd,
         port: s.spec.port,
-        uiPort: s.spec.uiPort,
         pid: s.pid,
         status: s.status,
         startedAt: s.startedAt,
@@ -310,7 +309,7 @@ async function poll() {
       '<td><code>' + (s.pid ?? "—") + '</code></td>' +
       '<td><span class="uptime">' + (s.startedAt ? fmtUptime(s.startedAt) : "") + '</span></td>' +
       '<td>' + (s.port ? '<code>:' + s.port + '</code>' : "") + '</td>' +
-      '<td>' + (s.uiPort ? '<a href="http://localhost:' + s.uiPort + '" target="_blank">:' + s.uiPort + ' ↗</a>' : "") + '</td>' +
+      '<td>' + (s.name !== "restate-server" ? '<a href="/ops/' + s.name + '">view ↗</a>' : "") + '</td>' +
       '<td class="actions">' +
         '<button onclick="act(\\''+s.name+'\\',\\'start\\')">start</button>' +
         '<button class="restart" onclick="act(\\''+s.name+'\\',\\'restart\\')">restart</button>' +

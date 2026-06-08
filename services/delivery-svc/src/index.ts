@@ -1,57 +1,29 @@
 import * as restate from "@restatedev/restate-sdk";
-import { selfRegisterTools, serveOpsView, readToolCounters } from "@dashops/shared";
+import { selfRegisterTools, readToolCounters, type ToolCounterSnapshot } from "@dashops/shared";
 import { deliveryLookup } from "./delivery-lookup.js";
 import { escalationHistory } from "./escalation-history.js";
 
 const port = parseInt(process.env.PORT ?? "9081", 10);
-const uiPort = parseInt(process.env.UI_PORT ?? String(port + 100), 10);
+const ownedTools = ["delivery_lookup", "escalation_history"];
+
+// Narrow data-only ops handler. No HTML, no notion of "sections" — just the
+// in-process counter snapshot. The BFF queries this when it renders the
+// /ops/delivery-svc page in the web tier.
+const ops = restate.service({
+  name: "DeliverySvc",
+  handlers: {
+    toolCounters: async (_ctx: restate.Context): Promise<ToolCounterSnapshot[]> => {
+      return readToolCounters(ownedTools);
+    },
+  },
+});
 
 restate.serve({
-  services: [deliveryLookup, escalationHistory],
+  services: [deliveryLookup, escalationHistory, ops],
   port,
 });
 console.log(`delivery-svc listening on :${port}`);
 
-const ownedTools = ["delivery_lookup", "escalation_history"];
-
-serveOpsView({
-  port: uiPort,
-  serviceName: "delivery-svc",
-  role: "Delivery-domain reads: lookups by delivery ID and escalation history.",
-  sections: [
-    {
-      title: "Tools served",
-      render: () => {
-        const snaps = readToolCounters(ownedTools);
-        const rows = snaps
-          .map(
-            (s) => `<tr>
-              <td><span class="chip">${s.name}</span></td>
-              <td class="counter">${s.count}</td>
-              <td class="muted">${
-                s.lastInvokedAt ? new Date(s.lastInvokedAt).toLocaleTimeString() : "—"
-              }</td>
-            </tr>`
-          )
-          .join("");
-        return `<table>
-          <thead><tr><th>tool</th><th>invocations</th><th>last call</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
-      },
-    },
-    {
-      title: "Service info",
-      render: () => `<table>
-        <tr><td class="muted">restate port</td><td><code>:${port}</code></td></tr>
-        <tr><td class="muted">ops view port</td><td><code>:${uiPort}</code></td></tr>
-        <tr><td class="muted">restate services</td><td><code>DeliveryLookup</code>, <code>EscalationHistory</code></td></tr>
-      </table>`,
-    },
-  ],
-});
-
-// Self-register the tools we own with the gateway's ToolRegistry.
 selfRegisterTools([
   {
     name: "delivery_lookup",
