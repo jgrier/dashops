@@ -1,27 +1,30 @@
-// Stateless BFF for the entire DashOps demo.
+// Stateless BFF — standalone Node process, started by the supervisor as
+// a child like any other service.
 //
-// Serves every browser-facing page (operator, approver, services portal)
-// and proxies the chat APIs (/api/sessions/*, /api/approvals/*) to the
-// Restate ingress. NONE of these handlers touch process-local state on
-// the supervisor — every request is a pure function of
-// (request) → (file from disk | response from Restate).
+// Serves every browser-facing page (operator, approver, services portal,
+// per-service ops views) and proxies the chat APIs to the Restate
+// ingress. Every handler is a pure function of (request) → (file from
+// disk | response from Restate). No state lives in this process; if you
+// kill it, chat UIs go dark, but nothing is lost — start it back up and
+// they return.
 //
-// The supervisor's process-management responsibility (PIDs, log
-// buffers, exit codes) lives in procs.ts and is reachable through a
-// disjoint set of /api/services/* and /api/state routes wired in
-// index.ts. Two roles, one process, deliberately kept separate.
+// Used to be services/supervisor/src/bff.ts (a handleBff export wired
+// into the supervisor's HTTP router); the supervisor is now a pure TUI
+// and this is its own service.
 
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const WEB_ROOT = path.resolve(__dirname, "..", "..", "..", "web");
 
 const RESTATE_INGRESS = process.env.RESTATE_INGRESS ?? "http://localhost:8080";
+const PORT = parseInt(process.env.BFF_PORT ?? "3001", 10);
 
-// ---- entrypoint --------------------------------------------------------
-
-// Returns true if this request was a BFF route and was handled. Index.ts
-// dispatches: BFF first, control plane second, 404 last.
-export async function handleBff(
+async function dispatch(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   webRoot: string
@@ -817,7 +820,6 @@ a { color: var(--accent); }
   <a href="/operator">operator</a>
   <a href="/approver">approver</a>
   <a href="/services">services</a>
-  <a href="/supervisor">supervisor</a>
 </div>
 <div class="container">
   ${body}
@@ -859,6 +861,10 @@ function renderServicesPortal(): string {
       </a>`
     )
     .join("");
+  return renderPortalHtml(cards);
+}
+
+function renderPortalHtml(cards: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -897,7 +903,6 @@ code { font-family: ui-monospace, monospace; color: #88c0d0; }
   <a href="/operator">operator</a>
   <a href="/approver">approver</a>
   <a href="/services" class="active">services</a>
-  <a href="/supervisor">supervisor</a>
 </div>
 <div class="container">
   <h1>DashOps services</h1>
@@ -907,3 +912,36 @@ code { font-family: ui-monospace, monospace; color: #88c0d0; }
 </body>
 </html>`;
 }
+
+// ---- HTTP server bootstrap -------------------------------------------
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const handled = await dispatch(req, res, WEB_ROOT);
+    if (!handled) {
+      res.statusCode = 404;
+      res.end("not found");
+    }
+  } catch (e) {
+    res.statusCode = 500;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ error: (e as Error).message }));
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`BFF listening on http://localhost:${PORT}`);
+  console.log(`  operator : http://localhost:${PORT}/operator`);
+  console.log(`  approver : http://localhost:${PORT}/approver`);
+  console.log(`  services : http://localhost:${PORT}/services`);
+});
+
+// Clean shutdown so the supervisor can stop us gracefully.
+function shutdown(signal: string) {
+  console.log(`BFF: received ${signal}, closing server`);
+  server.close(() => process.exit(0));
+  // hard kill if close hangs (shouldn't, but just in case)
+  setTimeout(() => process.exit(0), 1500);
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

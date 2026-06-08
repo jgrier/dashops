@@ -30,6 +30,15 @@ export const services: ServiceSpec[] = [
     role: "Restate runtime — durable execution, VO state, journal storage",
   },
   {
+    name: "bff",
+    cwd: "services/bff",
+    command: "npm",
+    args: ["run", "dev"],
+    port: 3001,
+    registerDeployment: false,    // HTTP-only, not a Restate service
+    role: "Browser-facing HTTP. Chat UIs, services portal, per-service ops pages.",
+  },
+  {
     name: "gateway",
     cwd: "services/gateway",
     command: "npm",
