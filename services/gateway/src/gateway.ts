@@ -10,6 +10,7 @@ import type { CostEntry } from "./cost-ledger.js";
 import { gatewayMiddlewares } from "./middlewares/index.js";
 import type { MiddlewareContext, MiddlewareResult } from "./middlewares/types.js";
 import { fingerprint } from "./policies.js";
+import { recordCall } from "./calls-log.js";
 
 // The gateway: every agent ↔ tool call passes through here.
 // Pipeline:
@@ -24,6 +25,35 @@ export const gateway = restate.service({
       ctx: restate.Context,
       req: CallToolRequest
     ): Promise<CallToolResponse> => {
+      // Log every return path through a single helper. Wrapped in ctx.run so
+      // replay (e.g. resume from a rate-limit ctx.sleep) doesn't dup-log.
+      const log = async (
+        response: CallToolResponse,
+        extras?: { waitedMs?: number }
+      ): Promise<CallToolResponse> => {
+        const now = await ctx.date.now();
+        await ctx.run("log call", () => {
+          recordCall({
+            timestampMs: now,
+            toolName: req.toolName,
+            status: response.status,
+            source:
+              response.blocked?.source ??
+              (response.status === "needs_approval" ? "approval-policy" : undefined),
+            reason:
+              response.blocked?.message ??
+              response.approval?.actionSummary,
+            tenantId: req.identity.tenantId,
+            sessionId: req.identity.sessionId,
+            costCents:
+              response.status === "ok" ? response.costCents : undefined,
+            waitedMs: extras?.waitedMs && extras.waitedMs > 0 ? extras.waitedMs : undefined,
+            appealable: !!response.blocked?.appeal,
+          });
+        });
+        return response;
+      };
+
       // ---- Step 1: registry lookup
       const registration = await ctx.genericCall<string, ToolRegistration | null>({
         service: "ToolRegistry",
@@ -35,11 +65,11 @@ export const gateway = restate.service({
       });
 
       if (!registration) {
-        return {
+        return log({
           status: "blocked",
           toolName: req.toolName,
           blocked: { source: "registry", message: `unknown tool: ${req.toolName}` },
-        };
+        });
       }
 
       // ---- Step 1b: if this is an appeal-retry, verify the appeal token.
@@ -59,22 +89,24 @@ export const gateway = restate.service({
           name: "appeal · verify",
         });
         if (!verify.ok) {
-          return {
+          return log({
             status: "blocked",
             toolName: req.toolName,
             blocked: {
               source: "appeal",
               message: verify.reason ?? "appeal token invalid",
             },
-          };
+          });
         }
       }
 
       const mctx: MiddlewareContext = { request: req, registration };
 
       // ---- Step 2: run the middleware chain
-      const chainResult = await runMiddlewareChain(ctx, mctx);
-      if (chainResult) return chainResult;
+      const chainOutcome = await runMiddlewareChain(ctx, mctx);
+      if (chainOutcome.result) {
+        return log(chainOutcome.result, { waitedMs: chainOutcome.waitedMs });
+      }
 
       // ---- Step 3: identity inject + downstream dispatch
       const payload: ToolPayload = { params: req.params, identity: req.identity };
@@ -105,23 +137,27 @@ export const gateway = restate.service({
         });
       }
 
-      return {
-        status: "ok",
-        toolName: req.toolName,
-        result: toolResult.result,
-        costCents,
-      };
+      return log(
+        {
+          status: "ok",
+          toolName: req.toolName,
+          result: toolResult.result,
+          costCents,
+        },
+        { waitedMs: chainOutcome.waitedMs }
+      );
     },
   },
 });
 
-// Walks the middleware chain. Returns null if all middlewares pass (caller
-// should proceed to dispatch). Returns a CallToolResponse if any middleware
-// short-circuits the call.
+// Walks the middleware chain. Returns the short-circuit response if any
+// middleware blocks; otherwise null result, and the total time the call
+// spent sleeping in rate-limit waits (for the gateway calls log).
 async function runMiddlewareChain(
   ctx: restate.Context,
   mctx: MiddlewareContext
-): Promise<CallToolResponse | null> {
+): Promise<{ result: CallToolResponse | null; waitedMs: number }> {
+  let waitedMs = 0;
   for (const mw of gatewayMiddlewares) {
     // Skip middlewares the caller has been explicitly authorized to bypass
     // (e.g. an appeal was granted). Each bypass is bound to a specific
@@ -134,14 +170,18 @@ async function runMiddlewareChain(
       const result: MiddlewareResult = await mw.check(ctx, mctx);
       if (result.kind === "pass") break;
       if (result.kind === "wait") {
+        waitedMs += result.ms;
         await ctx.sleep(result.ms);
         continue;
       }
       // block / block_appealable / needs_human — short-circuit
-      return wrapResultAsResponse(mctx.request.toolName, result, mctx.request);
+      return {
+        result: wrapResultAsResponse(mctx.request.toolName, result, mctx.request),
+        waitedMs,
+      };
     }
   }
-  return null;
+  return { result: null, waitedMs };
 }
 
 function wrapResultAsResponse(

@@ -5,6 +5,7 @@ import { toolRegistry } from "./tool-registry.js";
 import { costLedger } from "./cost-ledger.js";
 import { tokenBucket } from "./token-bucket.js";
 import { gatewayMiddlewares } from "./middlewares/index.js";
+import { recentCalls } from "./calls-log.js";
 
 const port = parseInt(process.env.PORT ?? "9080", 10);
 const uiPort = parseInt(process.env.UI_PORT ?? String(port + 100), 10);
@@ -15,6 +16,19 @@ restate.serve({
   port,
 });
 console.log(`Gateway (with ToolRegistry, CostLedger, TokenBucket) listening on :${port}`);
+
+function pill(c: { status: string; appealable?: boolean }): string {
+  if (c.status === "ok") {
+    return `<span class="chip" style="background:#1f3a1f;color:#9ce19c">ok</span>`;
+  }
+  if (c.status === "needs_approval") {
+    return `<span class="chip" style="background:#3a2a05;color:#ffd28e">needs_approval</span>`;
+  }
+  if (c.appealable) {
+    return `<span class="chip" style="background:#3a1f1f;color:#ffb0a0">blocked · appealable</span>`;
+  }
+  return `<span class="chip" style="background:#3a1f1f;color:#ffb0a0">blocked</span>`;
+}
 
 async function fetchRegistry(): Promise<ToolRegistration[]> {
   try {
@@ -66,6 +80,35 @@ serveOpsView({
           .join("");
         return `<table>
           <thead><tr><th>tool</th><th>impl</th><th>rate</th><th>cost</th><th>description</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      },
+    },
+    {
+      title: "Recent calls",
+      render: () => {
+        const calls = recentCalls();
+        if (calls.length === 0) {
+          return `<div class="empty">No calls yet — fire something from the operator UI.</div>`;
+        }
+        const rows = calls
+          .map((c) => {
+            const statusPill = pill(c);
+            const detail = [c.source ? `<code>${c.source}</code>` : null, c.reason]
+              .filter(Boolean)
+              .join(" — ");
+            const waited = c.waitedMs ? ` <span class="muted">(+${c.waitedMs}ms rate-wait)</span>` : "";
+            const cost = c.costCents ? ` <span class="muted">${c.costCents}¢</span>` : "";
+            return `<tr>
+              <td class="muted">${new Date(c.timestampMs).toLocaleTimeString()}</td>
+              <td><span class="chip">${c.toolName}</span></td>
+              <td>${statusPill}</td>
+              <td>${detail}${waited}${cost}</td>
+            </tr>`;
+          })
+          .join("");
+        return `<table>
+          <thead><tr><th>time</th><th>tool</th><th>outcome</th><th>detail</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
       },
