@@ -36,11 +36,40 @@ export function listStates(): ProcState[] {
   return [...states.values()];
 }
 
+// Strip the Restate SDK's standard log boilerplate so the TUI log pane is
+// readable. Two transformations:
+//   1. Drop the per-invocation chatter ("Starting invocation." +
+//      "Invocation completed successfully.") that fires on every single
+//      handler call — pure noise at TUI scale.
+//   2. Trim "[restate][2026-06-08T...Z][Service/key/handler][inv_xxx] INFO: msg"
+//      down to "HH:MM:SS msg". Keep WARN/ERROR levels visible.
+// Lines that don't match the Restate format (npm output, our own
+// console.logs) pass through unchanged.
+const RESTATE_TS_RE = /^\[restate\]\[\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z\]\s*/;
+const RESTATE_TAGS_RE = /^(?:\[[^\]]+\])+\s*/;
+const SKIP_INVOCATION_NOISE_RE =
+  /INFO:\s+(?:Starting invocation|Invocation completed successfully)\.?\s*$/;
+
+function cleanLogLine(line: string): string | null {
+  if (line.length === 0) return null;
+  if (!line.startsWith("[restate]")) return line;        // npm / app prints, untouched
+
+  if (SKIP_INVOCATION_NOISE_RE.test(line)) return null;  // drop the spammy pair
+
+  const m = line.match(RESTATE_TS_RE);
+  if (!m) return line;
+  const time = m[1];
+  let rest = line.slice(m[0].length).replace(RESTATE_TAGS_RE, "");
+  if (rest.startsWith("INFO: ")) rest = rest.slice(6);   // drop the level for INFO; keep WARN/ERROR
+  return `${time} ${rest}`.trim();
+}
+
 function pushLog(state: ProcState, chunk: Buffer): void {
   const text = chunk.toString("utf-8");
   const lines = text.split(/\r?\n/);
-  for (const line of lines) {
-    if (line.length === 0) continue;
+  for (const raw of lines) {
+    const line = cleanLogLine(raw);
+    if (line === null) continue;
     state.log.push(line);
     if (state.log.length > LOG_LINES) state.log.shift();
   }
