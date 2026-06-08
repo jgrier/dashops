@@ -15,6 +15,13 @@ export interface CallToolRequest {
   // Set on the retry call after an approval has been granted. Gateway
   // verifies this against the ApprovalService and skips the policy check.
   approvalToken?: string;
+  // Set on appeal-retry: middleware names to skip for this call (verified
+  // by gateway against the appeal record). Populated by ops-agent after
+  // an approver grants an appeal of a previously-blocked call.
+  bypassMiddlewares?: string[];
+  // Token corresponding to bypassMiddlewares — proves the appeal was
+  // granted. Gateway verifies via ApprovalService.
+  appealToken?: string;
 }
 
 export interface CallToolResponse {
@@ -38,6 +45,14 @@ export interface BlockedReason {
   source: string;
   message: string;
   details?: unknown;
+  // Populated when this block can be appealed to a human reviewer.
+  // The operator UI surfaces a "request human review" button when this is set.
+  appeal?: {
+    approverGroup: string;
+    summaryHint: string;
+    middlewareName: string;     // which middleware blocked; appeal grants bypass for this one only
+    actionFingerprint: string;  // binds the appeal to this exact call
+  };
 }
 
 export interface ToolRegistration {
