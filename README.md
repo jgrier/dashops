@@ -39,52 +39,51 @@ flowchart TB
   classDef agent fill:#1e3a1e,stroke:#7dd987,color:#cfeed1
   classDef gw fill:#2a1d3a,stroke:#bd87dd,color:#e0c0f0
   classDef svc fill:#1f262e,stroke:#88c0d0,color:#c0e2eb
-  classDef hidden fill:transparent,stroke:#fbbf24,stroke-dasharray: 5 5,color:#fbbf24
+  classDef restate fill:#3a2f0d,stroke:#fbbf24,color:#fbbf24
 
   browser["Browser
 operator · approver · portal"]:::ext
 
   bff["BFF · :3001
-serves every browser page
-reads state from each service"]:::bff
+serves every browser page"]:::bff
 
-  subgraph rt["Restate runtime — durable execution beneath every process below
-ingress :8080 · admin :9070"]
-    opsagent["ops-agent · :9083
+  opsagent["ops-agent · :9083
 Session VO
 agent loop"]:::agent
 
-    gateway["gateway · :9080
-Gateway · ToolRegistry
-CostLedger · TokenBucket"]:::gw
-
-    approvalsvc["approval-service · :9085
+  approvalsvc["approval-service · :9085
 ApprovalService VO
 Pending + Decided indexes"]:::svc
 
-    llmsvc["llm-svc · :9087
+  gateway["gateway · :9080
+Gateway · ToolRegistry
+CostLedger · TokenBucket"]:::gw
+
+  llmsvc["llm-svc · :9087
 LLMService"]:::svc
 
-    guardrails["guardrails · :9084
+  guardrails["guardrails · :9084
 PIIGuardrail"]:::svc
 
-    delivery["delivery-svc · :9081
+  delivery["delivery-svc · :9081
 delivery_lookup
 escalation_history"]:::svc
 
-    customer["customer-svc · :9082
+  customer["customer-svc · :9082
 customer_lookup
 apply_credit
 customer_outreach"]:::svc
 
-    insights["insights-svc · :9086
+  insights["insights-svc · :9086
 semantic_search
 merchant_status"]:::svc
-  end
 
-  class rt hidden
+  restate["Restate runtime · ingress :8080 · admin :9070 · durable execution beneath every process above"]:::restate
 
   browser ==>|HTTP| bff
+
+  bff -->|sessions: send / state / reset / appeal| opsagent
+  bff -->|approvals: pending / respond / history| approvalsvc
 
   opsagent -->|callTool / callLLM| gateway
   opsagent -->|requestApproval| approvalsvc
@@ -98,21 +97,31 @@ merchant_status"]:::svc
 
   guardrails -.callLLM.-> gateway
   insights -.callLLM.-> gateway
+
+  %% Invisible links pin Restate to the bottom as a labelled layer.
+  opsagent ~~~ restate
+  gateway ~~~ restate
+  approvalsvc ~~~ restate
+  llmsvc ~~~ restate
+  guardrails ~~~ restate
+  delivery ~~~ restate
+  customer ~~~ restate
+  insights ~~~ restate
 ```
 
 **How to read this:**
 
 - Every box is a separate **OS process**. `lsof -nP -iTCP -sTCP:LISTEN` shows one TCP listener per port.
-- Arrows are **logical caller → callee** edges between application services. Every one actually traverses Restate's ingress at runtime — Restate journals the call, deduplicates retries, and resumes durably after process death. The runtime is drawn as the dashed backdrop on purpose: showing it as a hop on every arrow would clutter the picture without adding information. Treat it as the substrate.
-- Dotted arrows (`guardrails → gateway`, `insights → gateway`) are cross-cutting LLM calls — the PII guardrail's classifier and the semantic-search tool route their own LLM access back through `Gateway.callLLM` so every LLM call gets the same policy/cost/audit treatment.
-- The BFF reads state from every service in the runtime to render its pages, but those edges aren't drawn — they're plumbing, not architecture. The interesting calls are agent → gateway → tools/guardrails/LLM, and those are what the diagram emphasizes.
-- A supervisor process spawns and kills every box above (see [Running it](#running-it)), but it's operational tooling rather than part of the architecture itself, so it's not drawn here.
+- The **Restate runtime is the layer underneath everything** — every arrow above actually traverses Restate's ingress at runtime, which is how the calls become durable, journaled, and replayable. We don't draw arrows in and out of the runtime because it would clutter every edge without adding information; the durability is a property of the substrate.
+- The two **BFF → backend** arrows shown are the chat-app-level interfaces: the operator side of the demo (operator UI ↔ Session VO) and the approver side (approver UI ↔ ApprovalService + indexes). The BFF also reads ops-view state from every other service to render `/ops/<svc>` pages — that's plumbing for the inspection UI, not part of the architecture, so it's not drawn.
+- The **agent → gateway → fan-out** is the heart of the demo. Every external call the agent makes flows through `Gateway.callTool` or `Gateway.callLLM`; the gateway then runs middleware (PII, approval policy, rate limit) and dispatches to a tool service, the LLM service, or the approval service depending on the situation.
+- The **dotted arrows** (`guardrails → gateway`, `insights → gateway`) are cross-cutting LLM calls — the PII classifier and the semantic-search tool route their *own* LLM access back through `Gateway.callLLM` so every LLM call gets the same policy/cost/audit treatment.
+- A supervisor process spawns and kills every box above (see [Running it](#running-it)) but it's operational tooling rather than part of the architecture, so it's not drawn here.
 
 ## What each process does
 
 | Process | Role | Notable Restate constructs |
 |---|---|---|
-| **supervisor** (TUI, terminal) | Master process. Spawns every other process and reaps them on quit. The one thing you'd never deliberately kill. | none — it's outside the runtime |
 | **bff** (`:3001`) | Stateless web tier. Serves `/operator`, `/approver`, `/services`, `/ops/<svc>`, and proxies `/api/*` to the Restate ingress. Every browser-facing pixel comes from here. | none — it's a plain HTTP server |
 | **gateway** (`:9080`) | The single chokepoint every agent ↔ tool ↔ LLM call passes through. Owns the middleware chain (PII, approval policy, rate limit), the tool registry, the cost ledger, the token buckets, and the in-process recent-calls log. | `restate.service` × 4 (Gateway, ToolRegistry, CostLedger, TokenBucket) |
 | **ops-agent** (`:9083`) | Per-session agent loop. A planner picks the next tool/LLM call from the chat history, dispatches through the gateway, and (when policy says so) suspends on an awakeable until an approver decides. | `Session` Virtual Object keyed by `sessionId`; awakeables for HITL |
