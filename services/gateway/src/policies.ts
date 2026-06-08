@@ -12,11 +12,16 @@ export interface ApprovalPolicy {
   summary: (params: Record<string, unknown>) => string;
 }
 
-const SENSITIVE_OUTREACH_TEMPLATES = new Set([
-  "apology_with_credit",
-  "refund_offer",
-]);
-
+// Approval policies are intentionally narrow today: only the actually-financial
+// step (apply_credit > $10) gates on finance-leads. The follow-on
+// customer_outreach used to also gate on ops-managers, but stacking two human
+// approvals on a single "apologize + credit" turn was noise — the financial
+// risk is the credit itself; the apology message is benign once the money has
+// been blessed.
+//
+// ops-managers is still demoable via the PII appeal path (see
+// services/gateway/src/middlewares/pii-guardrail.ts — block_appealable
+// escalates to ops-managers).
 export const policies: Record<string, ApprovalPolicy> = {
   apply_credit: {
     condition: (p) => Number(p.amount_cents ?? 0) > 1000,
@@ -25,12 +30,6 @@ export const policies: Record<string, ApprovalPolicy> = {
       `Apply $${(Number(p.amount_cents ?? 0) / 100).toFixed(2)} credit to customer ${
         p.customer_id ?? "?"
       }${p.reason ? ` — "${String(p.reason).slice(0, 60)}"` : ""}`,
-  },
-  customer_outreach: {
-    condition: (p) => SENSITIVE_OUTREACH_TEMPLATES.has(String(p.template ?? "")),
-    approverGroup: "ops-managers",
-    summary: (p) =>
-      `Send "${p.template}" outreach to customer ${p.customer_id ?? "?"}`,
   },
 };
 
