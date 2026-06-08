@@ -224,39 +224,76 @@ serveOpsView({
       },
     },
     {
-      title: "Recent calls",
+      title: "Recent calls (grouped by agent turn)",
       render: () => {
         const calls = recentCalls();
         if (calls.length === 0) {
           return `<div class="empty">No calls yet — fire something from the operator UI.</div>`;
         }
-        const rows = calls
-          .map((c) => {
-            const statusPill = pill(c);
-            const detail = [c.source ? `<code>${c.source}</code>` : null, c.reason]
-              .filter(Boolean)
-              .join(" — ");
-            const waited = c.waitedMs ? ` <span class="muted">(+${c.waitedMs}ms rate-wait)</span>` : "";
-            const cost = c.costCents ? ` <span class="muted">${c.costCents}¢</span>` : "";
-            const time = c.invocationId
-              ? `<a href="${adminUi}/ui/invocations/${encodeURIComponent(c.invocationId)}"
-                    target="_blank" class="muted"
-                    title="open in Restate admin">${new Date(c.timestampMs).toLocaleTimeString()} ↗</a>`
-              : `<span class="muted">${new Date(c.timestampMs).toLocaleTimeString()}</span>`;
-            return `<tr>
-              <td>${time}</td>
-              <td><span class="chip">${c.toolName}</span></td>
-              <td>${statusPill}</td>
-              <td>${detail}${waited}${cost}</td>
-            </tr>`;
-          })
-          .join("");
-        return `<table>
-          <thead><tr><th>time</th><th>tool</th><th>outcome</th><th>detail</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+
+        // Group calls by traceId. Each Session.sendMessage invocation mints
+        // a fresh traceId and threads it through every downstream gateway
+        // call — so one "send" click in the operator UI lights up as one
+        // contiguous cluster here. Calls without a traceId (direct curls,
+        // legacy entries) cluster under "untagged".
+        const groups: Array<{ traceId: string | null; calls: typeof calls }> = [];
+        for (const c of calls) {
+          const key = c.traceId ?? null;
+          const head = groups[groups.length - 1];
+          if (head && head.traceId === key) {
+            head.calls.push(c);
+          } else {
+            groups.push({ traceId: key, calls: [c] });
+          }
+        }
+
+        const renderCallRow = (c: (typeof calls)[number]) => {
+          const statusPill = pill(c);
+          const detail = [c.source ? `<code>${c.source}</code>` : null, c.reason]
+            .filter(Boolean)
+            .join(" — ");
+          const waited = c.waitedMs ? ` <span class="muted">(+${c.waitedMs}ms rate-wait)</span>` : "";
+          const cost = c.costCents ? ` <span class="muted">${c.costCents}¢</span>` : "";
+          const time = c.invocationId
+            ? `<a href="${adminUi}/ui/invocations/${encodeURIComponent(c.invocationId)}"
+                  target="_blank" class="muted"
+                  title="open in Restate admin">${new Date(c.timestampMs).toLocaleTimeString()} ↗</a>`
+            : `<span class="muted">${new Date(c.timestampMs).toLocaleTimeString()}</span>`;
+          return `<tr>
+            <td>${time}</td>
+            <td><span class="chip">${c.toolName}</span></td>
+            <td>${statusPill}</td>
+            <td>${detail}${waited}${cost}</td>
+          </tr>`;
+        };
+
+        const renderedGroups = groups.map((g) => {
+          const head = g.calls[0];
+          const tail = g.calls[g.calls.length - 1];
+          const totalCost = g.calls.reduce((s, c) => s + (c.costCents ?? 0), 0);
+          const label = g.traceId
+            ? `<code>turn ${g.traceId.slice(0, 8)}</code>`
+            : `<span class="muted">untagged</span>`;
+          const sessionMark = head.sessionId
+            ? ` · <span class="muted">session ${head.sessionId}</span>`
+            : "";
+          const durationMs = Math.max(0, head.timestampMs - tail.timestampMs);
+          const costMark = totalCost ? ` · <span class="counter">${totalCost}¢</span>` : "";
+          return `<div style="margin-bottom:14px;border-left:2px solid #f55b35;padding-left:10px;background:rgba(245,91,53,0.04)">
+            <div class="muted" style="font-size:11px;margin-bottom:4px">
+              ${label}${sessionMark} · ${g.calls.length} call${g.calls.length === 1 ? "" : "s"} · ${durationMs}ms${costMark}
+            </div>
+            <table><tbody>${g.calls.map(renderCallRow).join("")}</tbody></table>
+          </div>`;
+        });
+
+        return `${renderedGroups.join("")}
         <div class="muted" style="font-size:12px;margin-top:8px">
-          Click a timestamp to open the invocation's journal in the Restate admin UI.
+          Each cluster is one agent turn (one operator "send" click).
+          The traceId on <code>CallerIdentity</code> threads through every
+          downstream gateway call, so the rows that came from one user
+          message group together visually. Click a timestamp to open the
+          underlying invocation in the Restate admin UI.
         </div>`;
       },
     },

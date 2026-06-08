@@ -14,6 +14,11 @@ import { PLATFORM_IDENTITY, type CallLLMRequest, type CallLLMResponse } from "@d
 export interface PIICheckRequest {
   params: Record<string, unknown>;
   toolName: string;
+  // Trace id from the parent tool call, threaded through so the
+  // guardrail's LLM call clusters with the originating agent turn in
+  // the gateway recent-calls view. The tenantId stays "platform" for
+  // cost attribution; only the trace context is inherited.
+  parentTraceId?: string;
 }
 
 export interface PIICheckResponse {
@@ -33,7 +38,13 @@ export const piiGuardrail = restate.service({
       const llmReq: CallLLMRequest = {
         purpose: "guardrail-pii",
         params: { params: req.params, toolName: req.toolName },
-        identity: PLATFORM_IDENTITY,
+        identity: {
+          ...PLATFORM_IDENTITY,
+          // Inherit the parent turn's traceId for grouping in the
+          // gateway recent-calls view. Cost still attributes to
+          // PLATFORM_IDENTITY.tenantId ("platform").
+          traceId: req.parentTraceId ?? PLATFORM_IDENTITY.traceId,
+        },
       };
       const resp = await ctx.genericCall<CallLLMRequest, CallLLMResponse>({
         service: "Gateway",

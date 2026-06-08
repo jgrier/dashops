@@ -24,12 +24,19 @@ export const piiGuardrailMW: Middleware = {
     // PLATFORM_IDENTITY in shared). The middleware itself no longer
     // writes a CostLedger entry — callLLM is the single source.
     const resp = await ctx.genericCall<
-      { params: Record<string, unknown>; toolName: string },
+      { params: Record<string, unknown>; toolName: string; parentTraceId: string },
       PIIResp
     >({
       service: "PIIGuardrail",
       method: "check",
-      parameter: { params: req.params, toolName: req.toolName },
+      parameter: {
+        params: req.params,
+        toolName: req.toolName,
+        // Propagate the originating turn's trace id so the guardrail's
+        // own LLM call groups with the rest of the turn, even though
+        // its cost attributes to the platform tenant.
+        parentTraceId: req.identity.traceId,
+      },
       inputSerde: restate.serde.json,
       outputSerde: restate.serde.json,
       name: "mw · pii-guardrail",

@@ -15,6 +15,11 @@ export interface CallLogEntry {
   reason?: string;          // human-readable summary
   tenantId: string;
   sessionId: string;
+  // The agent turn this call belongs to. One Session.sendMessage invocation
+  // mints a fresh traceId on its CallerIdentity and threads it through every
+  // downstream gateway call — so all the rows produced by one "send" click
+  // share a traceId and group together in the recent-calls view.
+  traceId?: string;
   costCents?: number;
   waitedMs?: number;        // accumulated time spent in rate-limit waits
   appealable?: boolean;     // true when this was a block_appealable

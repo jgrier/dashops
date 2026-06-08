@@ -41,6 +41,7 @@ export const gateway = restate.service({
             kind: "tool",
             toolName: req.toolName,
             invocationId,
+            traceId: req.identity.traceId,
             status: response.status,
             source:
               response.blocked?.source ??
@@ -198,6 +199,7 @@ export const gateway = restate.service({
           kind: "llm",
           toolName: `llm:${req.purpose}`,
           invocationId,
+          traceId: req.identity.traceId,
           status: result.status,
           reason: result.mode === "live" ? "live mode" : "stub mode",
           tenantId: req.identity.tenantId,
