@@ -1,4 +1,4 @@
-# DashOps on Restate
+# Forkly Ops on Restate
 
 A small but complete agent platform built on [Restate](https://restate.dev). An **operator agent** investigates and resolves operational issues in a food-delivery-flavored mock world, behind an **agent gateway** that owns policy, cost, rate limits, and approvals. Every call between every process is durable; every piece of state is persisted in a Restate Virtual Object; the entire process tree can be ripped apart and reassembled live without losing in-flight work.
 
