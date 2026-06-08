@@ -70,11 +70,11 @@ function renderPage(serviceName: string, role: string, body: string): string {
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg); color: var(--text); margin: 0; padding: 0; }
-.topnav { background: #0e0e0e; padding: 10px 24px; border-bottom: 1px solid var(--border);
-  display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
-.topnav nav { display: flex; gap: 14px; }
-.topnav a { color: var(--muted); text-decoration: none; }
-.topnav a:hover { color: var(--accent); }
+.topnav { background: #0e0e0e; padding: 10px 24px; border-bottom: 1px solid #2a3038;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 13px; }
+.topnav nav { display: flex; gap: 16px; }
+.topnav a { color: #9ba6b3; text-decoration: none; }
+.topnav a:hover { color: #f55b35; }
 .container { max-width: 880px; margin: 0 auto; padding: 24px; }
 h1 { color: var(--accent); margin: 0 0 4px 0; font-size: 24px; }
 .role { color: var(--muted); font-size: 14px; margin-bottom: 24px; }

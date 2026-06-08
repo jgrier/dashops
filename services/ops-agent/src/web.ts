@@ -189,11 +189,11 @@ function renderServicesPortal(): string {
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg); color: var(--text); margin: 0; padding: 0; }
-.topnav { background: #0e0e0e; padding: 10px 24px; border-bottom: 1px solid var(--border);
-  display: flex; gap: 16px; font-size: 13px; }
-.topnav a { color: var(--muted); text-decoration: none; }
-.topnav a:hover { color: var(--accent); }
-.topnav a.active { color: var(--accent); font-weight: 600; }
+.topnav { background: #0e0e0e; padding: 10px 24px; border-bottom: 1px solid #2a3038;
+  display: flex; align-items: center; gap: 16px; font-size: 13px; }
+.topnav a { color: #9ba6b3; text-decoration: none; }
+.topnav a:hover { color: #f55b35; }
+.topnav a.active { color: #f55b35; font-weight: 600; }
 .container { max-width: 920px; margin: 0 auto; padding: 24px; }
 h1 { color: var(--accent); margin: 0 0 4px 0; font-size: 24px; }
 .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
