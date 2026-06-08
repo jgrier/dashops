@@ -39,9 +39,10 @@ is_listening 9083 || start_svc ops-agent        "$ROOT/services/ops-agent"
 is_listening 9084 || start_svc guardrails       "$ROOT/services/guardrails"
 is_listening 9085 || start_svc approval-service "$ROOT/services/approval-service"
 is_listening 9086 || start_svc insights-svc     "$ROOT/services/insights-svc"
+is_listening 9087 || start_svc llm-svc          "$ROOT/services/llm-svc"
 
 echo "== Waiting for services to listen =="
-for port in 9080 9081 9082 9083 9084 9085 9086; do
+for port in 9080 9081 9082 9083 9084 9085 9086 9087; do
   for i in 1 2 3 4 5 6 7 8 9 10; do
     if is_listening "$port"; then break; fi
     sleep 1
@@ -72,4 +73,5 @@ Logs:
   tail -f /tmp/dashops-guardrails.log
   tail -f /tmp/dashops-approval-service.log
   tail -f /tmp/dashops-insights-svc.log
+  tail -f /tmp/dashops-llm-svc.log
 EOF

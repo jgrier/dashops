@@ -8,7 +8,8 @@
 
 export interface CallLogEntry {
   timestampMs: number;
-  toolName: string;
+  kind: "tool" | "llm";
+  toolName: string;         // for kind="llm" this carries the purpose
   status: "ok" | "needs_approval" | "blocked";
   source?: string;          // for blocked / needs_approval: which middleware
   reason?: string;          // human-readable summary

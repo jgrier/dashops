@@ -1,5 +1,7 @@
 import * as restate from "@restatedev/restate-sdk";
 import type {
+  CallLLMRequest,
+  CallLLMResponse,
   CallToolRequest,
   CallToolResponse,
   ToolPayload,
@@ -35,6 +37,7 @@ export const gateway = restate.service({
         await ctx.run("log call", () => {
           recordCall({
             timestampMs: now,
+            kind: "tool",
             toolName: req.toolName,
             status: response.status,
             source:
@@ -146,6 +149,60 @@ export const gateway = restate.service({
         },
         { waitedMs: chainOutcome.waitedMs }
       );
+    },
+
+    // ---- callLLM ---------------------------------------------------------
+    // Parallel surface to callTool, but for LLM calls. The same gateway-level
+    // concerns apply (cost, audit, future rate-limit/PII scrubbing); we just
+    // route to LLMService instead of through the tool registry. Today the
+    // middleware chain is intentionally bypassed because (a) PII scrubbing on
+    // prompts needs a different scanner shape than tool params, and (b) the
+    // PII guardrail itself routes through here, so running the chain would
+    // recurse. Both are tractable later.
+    callLLM: async (
+      ctx: restate.Context,
+      req: CallLLMRequest
+    ): Promise<CallLLMResponse> => {
+      const now = await ctx.date.now();
+
+      const result = await ctx.genericCall<CallLLMRequest, CallLLMResponse>({
+        service: "LLMService",
+        method: "complete",
+        parameter: req,
+        name: `→ llm:${req.purpose}`,
+        inputSerde: restate.serde.json,
+        outputSerde: restate.serde.json,
+      });
+
+      if (result.costCents > 0) {
+        ctx.genericSend<CostEntry>({
+          service: "CostLedger",
+          method: "record",
+          key: req.identity.tenantId,
+          parameter: {
+            toolName: `llm:${req.purpose}`,
+            costCents: result.costCents,
+            timestampMs: now,
+            sessionId: req.identity.sessionId,
+          },
+          inputSerde: restate.serde.json,
+        });
+      }
+
+      await ctx.run("log llm call", () => {
+        recordCall({
+          timestampMs: now,
+          kind: "llm",
+          toolName: `llm:${req.purpose}`,
+          status: result.status,
+          reason: result.mode === "live" ? "live mode" : "stub mode",
+          tenantId: req.identity.tenantId,
+          sessionId: req.identity.sessionId,
+          costCents: result.costCents,
+        });
+      });
+
+      return result;
     },
   },
 });

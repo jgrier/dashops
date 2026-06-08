@@ -162,6 +162,7 @@ function renderServicesPortal(): string {
     { name: "guardrails",       role: "PIIGuardrail (regex pre-screen / LLM in live mode)", restatePort: 9084, uiPort: 9184 },
     { name: "approval-service", role: "Async human-in-the-loop approvals + appeals",        restatePort: 9085, uiPort: 9185 },
     { name: "insights-svc",     role: "semantic_search, merchant_status",                   restatePort: 9086, uiPort: 9186 },
+    { name: "llm-svc",          role: "Single backend for every LLM call (gateway-routed)", restatePort: 9087, uiPort: 9187 },
   ];
   const cards = services
     .map(

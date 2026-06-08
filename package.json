@@ -15,6 +15,7 @@
     "dev:delivery": "npm --workspace=@dashops/delivery-svc run dev",
     "dev:customer": "npm --workspace=@dashops/customer-svc run dev",
     "dev:insights": "npm --workspace=@dashops/insights-svc run dev",
+    "dev:llm": "npm --workspace=@dashops/llm-svc run dev",
     "dev:ops": "npm --workspace=@dashops/ops-agent run dev"
   },
   "engines": {

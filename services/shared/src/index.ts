@@ -170,6 +170,45 @@ export interface PendingApprovalSummary {
   kind?: "approval" | "appeal";
 }
 
+// ----- LLM gateway contracts ------------------------------------------------
+// Every LLM-shaped call in DashOps goes through the gateway's callLLM
+// handler, which dispatches to LLMService. Stub mode preserves today's
+// deterministic demo behavior; live mode (ANTHROPIC_API_KEY set) calls
+// @anthropic-ai/sdk. The gateway records cost, logs the call, and runs
+// LLM-specific middleware (rate limit etc.) on the way through.
+
+export interface LLMMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface CallLLMRequest {
+  purpose: string;                       // e.g. "agent-planning", "guardrail-pii", "semantic-search"
+  // Standard chat messages (used by live mode and by purposes whose prompt is
+  // already plain text). Optional because some stub purposes drive off
+  // structured `params` instead.
+  messages?: LLMMessage[];
+  // Purpose-specific structured input. Lets the agent planner pass
+  // session messages, the PII guardrail pass tool params + name, etc.,
+  // without having to serialize them through a chat-message wrapper.
+  params?: Record<string, unknown>;
+  model?: string;
+  identity: CallerIdentity;
+}
+
+export interface CallLLMResponse {
+  status: "ok" | "blocked";
+  purpose: string;
+  // For structured-stub purposes (planner, pii, semantic-search) this is a
+  // JS object matching the purpose's expected shape. For real LLM output
+  // it's the assistant's text response. Callers know what to expect.
+  content?: unknown;
+  costCents: number;
+  mode: "stub" | "live";
+  tokenUsage?: { inputTokens: number; outputTokens: number };
+  blocked?: BlockedReason;
+}
+
 export { selfRegisterTools } from "./self-register.js";
 export { serveOpsView } from "./serve-ops-view.js";
 export type { OpsViewOptions, OpsViewSection } from "./serve-ops-view.js";

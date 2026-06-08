@@ -26,5 +26,6 @@ register "ops-agent"        9083
 register "guardrails"       9084
 register "approval-service" 9085
 register "insights-svc"     9086
+register "llm-svc"          9087
 
 echo "All deployments registered. Tools self-register from each service."

@@ -17,9 +17,12 @@ restate.serve({
 });
 console.log(`Gateway (with ToolRegistry, CostLedger, TokenBucket) listening on :${port}`);
 
-function pill(c: { status: string; appealable?: boolean }): string {
+function pill(c: { status: string; appealable?: boolean; kind?: string }): string {
   if (c.status === "ok") {
-    return `<span class="chip" style="background:#1f3a1f;color:#9ce19c">ok</span>`;
+    const kindMark = c.kind === "llm"
+      ? ` <span style="opacity:0.7;font-size:10px">llm</span>`
+      : "";
+    return `<span class="chip" style="background:#1f3a1f;color:#9ce19c">ok${kindMark}</span>`;
   }
   if (c.status === "needs_approval") {
     return `<span class="chip" style="background:#3a2a05;color:#ffd28e">needs_approval</span>`;

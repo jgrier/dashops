@@ -3,12 +3,20 @@ import type {
   ApprovalDecision,
   ApprovalRequestPayload,
   CallerIdentity,
+  CallLLMRequest,
+  CallLLMResponse,
   CallToolRequest,
   CallToolResponse,
   SessionMessage,
   SessionStatus,
 } from "@dashops/shared";
-import { planNext } from "./llm.js";
+
+interface LLMStep {
+  thought: string;
+  next:
+    | { type: "tool_call"; tool: string; params: Record<string, unknown> }
+    | { type: "final"; reply: string };
+}
 
 const MAX_STEPS = 16;
 const MAX_APPROVAL_RETRIES = 1;
@@ -21,7 +29,26 @@ export async function runLoop(
     const messages = (await ctx.get<SessionMessage[]>("messages")) ?? [];
 
     await setStatus(ctx, "thinking");
-    const plan = planNext(messages);
+    // Planner used to be an in-process function; it now routes through the
+    // gateway's callLLM, which dispatches to LLMService. Stub mode preserves
+    // the same deterministic output as before.
+    const llmReq: CallLLMRequest = {
+      purpose: "agent-planning",
+      params: { messages },
+      identity,
+    };
+    const llmResp = await ctx.genericCall<CallLLMRequest, CallLLMResponse>({
+      service: "Gateway",
+      method: "callLLM",
+      parameter: llmReq,
+      name: "gateway → llm:agent-planning",
+      inputSerde: restate.serde.json,
+      outputSerde: restate.serde.json,
+    });
+    const plan = (llmResp.content as LLMStep) ?? {
+      thought: "Planner returned no content.",
+      next: { type: "final", reply: "I don't have an answer for that." },
+    };
     await appendMessage(ctx, {
       id: ctx.rand.uuidv4(),
       role: "assistant",
