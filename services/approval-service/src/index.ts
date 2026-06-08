@@ -2,13 +2,19 @@ import * as restate from "@restatedev/restate-sdk";
 import { serveOpsView, type PendingApprovalSummary } from "@dashops/shared";
 import { approvalService } from "./approval.js";
 import { pendingApprovalsIndex } from "./pending-index.js";
+import { decidedApprovalsIndex } from "./decided-index.js";
 
 const port = parseInt(process.env.PORT ?? "9085", 10);
 const uiPort = parseInt(process.env.UI_PORT ?? String(port + 100), 10);
 const ingress = process.env.RESTATE_INGRESS ?? "http://localhost:8080";
 
-restate.serve({ services: [approvalService, pendingApprovalsIndex], port });
-console.log(`Approval-service (ApprovalService, PendingApprovalsIndex) listening on :${port}`);
+restate.serve({
+  services: [approvalService, pendingApprovalsIndex, decidedApprovalsIndex],
+  port,
+});
+console.log(
+  `Approval-service (ApprovalService, PendingApprovalsIndex, DecidedApprovalsIndex) listening on :${port}`
+);
 
 // The two approver groups the demo uses. Add new ones here as policies grow.
 const KNOWN_GROUPS = ["ops-managers", "finance-leads"];

@@ -21,13 +21,33 @@ const toastEl = document.getElementById("toast");
 
 const GROUPS = ["finance-leads", "ops-managers"];
 const GROUP_KEY = "dashops_approver_group";
+const VIEW_KEY = "dashops_approver_view";
 let currentGroup = GROUPS.includes(localStorage.getItem(GROUP_KEY))
   ? localStorage.getItem(GROUP_KEY)
   : GROUPS[0];
+let currentView = localStorage.getItem(VIEW_KEY) === "history" ? "history" : "pending";
 
-// Per-group pending list cached from the most recent poll. Drives the
-// count badge in the tab strip and the cards in the active group view.
+// Per-group caches from the most recent poll. Pending drives the count
+// badge; history feeds the "Decided" sub-tab.
 const pendingByGroup = new Map(GROUPS.map((g) => [g, []]));
+const historyByGroup = new Map(GROUPS.map((g) => [g, []]));
+
+// Subtab wiring — match initial state to localStorage selection.
+const subtabBtns = document.querySelectorAll(".subtab");
+subtabBtns.forEach((btn) => {
+  btn.classList.toggle("active", btn.dataset.view === currentView);
+  btn.addEventListener("click", () => switchView(btn.dataset.view));
+});
+
+function switchView(view) {
+  if (currentView === view) return;
+  currentView = view;
+  localStorage.setItem(VIEW_KEY, view);
+  subtabBtns.forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  cardsById.clear();
+  contentEl.innerHTML = "";
+  renderActiveView();
+}
 
 function switchGroup(g) {
   if (currentGroup === g) return;
@@ -36,7 +56,15 @@ function switchGroup(g) {
   cardsById.clear();
   contentEl.innerHTML = "";
   renderTabs();
-  render(pendingByGroup.get(currentGroup) || []);
+  renderActiveView();
+}
+
+function renderActiveView() {
+  if (currentView === "history") {
+    renderHistory(historyByGroup.get(currentGroup) || []);
+  } else {
+    render(pendingByGroup.get(currentGroup) || []);
+  }
 }
 
 function renderTabs() {
@@ -59,10 +87,18 @@ function renderTabs() {
 
 async function pollGroup(g) {
   try {
-    const r = await fetch(`/api/approvals/pending?group=${encodeURIComponent(g)}`);
-    if (!r.ok) return;
-    const list = await r.json();
-    pendingByGroup.set(g, Array.isArray(list) ? list : []);
+    const [pendR, histR] = await Promise.all([
+      fetch(`/api/approvals/pending?group=${encodeURIComponent(g)}`),
+      fetch(`/api/approvals/history?group=${encodeURIComponent(g)}`),
+    ]);
+    if (pendR.ok) {
+      const list = await pendR.json();
+      pendingByGroup.set(g, Array.isArray(list) ? list : []);
+    }
+    if (histR.ok) {
+      const list = await histR.json();
+      historyByGroup.set(g, Array.isArray(list) ? list : []);
+    }
   } catch {
     // ignore transient errors
   }
@@ -71,7 +107,7 @@ async function pollGroup(g) {
 async function refresh() {
   await Promise.all(GROUPS.map(pollGroup));
   renderTabs();
-  render(pendingByGroup.get(currentGroup) || []);
+  renderActiveView();
 }
 
 // Map of approvalId -> card element so we can reconcile without nuking
@@ -111,6 +147,40 @@ function render(list) {
       card.remove();
       cardsById.delete(id);
     }
+  }
+}
+
+// History view: each decided approval becomes a compact row. Sourced from
+// the DecidedApprovalsIndex VO — durable per-group audit log.
+function renderHistory(list) {
+  // Reset reconciliation map; history rows aren't long-lived inputs.
+  cardsById.clear();
+  contentEl.innerHTML = "";
+  if (!list || list.length === 0) {
+    contentEl.innerHTML = `<div class="empty">No decided approvals yet for <strong>${escape(
+      currentGroup
+    )}</strong>.</div>`;
+    return;
+  }
+  for (const item of list) {
+    const row = document.createElement("div");
+    row.className = "history-row";
+    const isAppeal = item.kind === "appeal";
+    const when = new Date(item.decidedAtMs).toLocaleString();
+    row.innerHTML = `
+      <span class="outcome ${escape(item.outcome)}">${escape(item.outcome)}</span>
+      <div>
+        ${isAppeal ? '<span class="kind-chip appeal-chip" style="margin-right:6px">APPEAL</span>' : ""}
+        <span class="tool-chip">${escape(item.toolName)}</span>
+        <span style="margin-left:8px">${escape(item.actionSummary)}</span>
+        ${item.comment ? `<div class="comment">"${escape(item.comment)}"</div>` : ""}
+      </div>
+      <span class="who">${
+        item.approverUserId ? "by " + escape(item.approverUserId) : ""
+      }<br/>from ${escape(item.initiator?.userId ?? "?")} · ${escape(item.initiator?.sessionId ?? "?")}</span>
+      <span class="when">${when}</span>
+    `;
+    contentEl.appendChild(row);
   }
 }
 

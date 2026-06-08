@@ -18,6 +18,7 @@ export interface CallLogEntry {
   costCents?: number;
   waitedMs?: number;        // accumulated time spent in rate-limit waits
   appealable?: boolean;     // true when this was a block_appealable
+  invocationId?: string;    // Restate invocation id for the deep-link to admin UI
 }
 
 const buf: CallLogEntry[] = [];

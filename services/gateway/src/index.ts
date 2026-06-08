@@ -10,6 +10,12 @@ import { recentCalls } from "./calls-log.js";
 const port = parseInt(process.env.PORT ?? "9080", 10);
 const uiPort = parseInt(process.env.UI_PORT ?? String(port + 100), 10);
 const ingress = process.env.RESTATE_INGRESS ?? "http://localhost:8080";
+const adminUi = process.env.RESTATE_ADMIN_UI ?? "http://localhost:9070";
+
+// Tenants we know about in the demo. Used to enumerate CostLedger /
+// TokenBucket VOs for the ops view. Add to this list if you introduce a
+// new tenant id in code.
+const KNOWN_TENANTS = ["demo-tenant", "platform"];
 
 restate.serve({
   services: [gateway, toolRegistry, costLedger, tokenBucket],
@@ -43,10 +49,63 @@ async function fetchRegistry(): Promise<ToolRegistration[]> {
   }
 }
 
+interface CostEntry {
+  toolName: string;
+  costCents: number;
+  timestampMs: number;
+  sessionId: string;
+}
+interface CostSummary {
+  tenantId: string;
+  totalCents: number;
+  entries: CostEntry[];
+}
+
+async function fetchCostSummary(tenantId: string): Promise<CostSummary | null> {
+  try {
+    const r = await fetch(`${ingress}/CostLedger/${encodeURIComponent(tenantId)}/summary`, {
+      method: "POST",
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as CostSummary;
+  } catch {
+    return null;
+  }
+}
+
+interface BucketState {
+  key: string;
+  tokens: number | null;
+  lastRefillMs: number | null;
+}
+
+async function fetchBucketState(bucketKey: string): Promise<BucketState | null> {
+  try {
+    const r = await fetch(`${ingress}/TokenBucket/${encodeURIComponent(bucketKey)}/state`, {
+      method: "POST",
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as BucketState;
+  } catch {
+    return null;
+  }
+}
+
+// Horizontal bar showing tokens / capacity. The color shifts toward red as
+// the bucket drains so the rate-limit demo has a strong visual signal.
+function fillBar(tokens: number | null, capacity: number): string {
+  const t = tokens ?? capacity;
+  const pct = Math.max(0, Math.min(100, (t / capacity) * 100));
+  const color = pct > 60 ? "#4dd478" : pct > 25 ? "#ffcc4d" : "#f55b35";
+  return `<div style="display:inline-block;width:120px;height:8px;background:#2a2a2a;border-radius:4px;overflow:hidden;vertical-align:middle">
+    <div style="width:${pct}%;height:100%;background:${color};transition:width 0.3s"></div>
+  </div>`;
+}
+
 serveOpsView({
   port: uiPort,
   serviceName: "gateway",
-  role: "Every agent ↔ tool call passes through here: registry lookup → middleware chain → dispatch → cost record.",
+  role: "Every agent ↔ tool/LLM call passes through here: registry lookup → middleware chain → dispatch → cost + audit. State below is read live from the durable VOs.",
   sections: [
     {
       title: "Middleware chain",
@@ -88,6 +147,106 @@ serveOpsView({
       },
     },
     {
+      title: "Rate-limit buckets (live, durable in Restate)",
+      render: async () => {
+        // For each registered tool, peek the (demo-tenant, tool) bucket —
+        // that's the per-(tenant,tool) bucket driven by the tool's
+        // registered perMinute. It's where the rate-limit demo's
+        // bottleneck lives (merchant_status caps at 6/min).
+        const tools = await fetchRegistry();
+        if (tools.length === 0) return `<div class="empty">No tools yet.</div>`;
+
+        const rows = await Promise.all(
+          tools.map(async (t) => {
+            const cap = t.rateLimit?.perMinute ?? 60;
+            const key = `tenant_tool:demo-tenant:${t.name}`;
+            const st = await fetchBucketState(key);
+            const tokens = st?.tokens ?? cap;
+            const lastRefill = st?.lastRefillMs
+              ? new Date(st.lastRefillMs).toLocaleTimeString()
+              : "—";
+            return `<tr>
+              <td><span class="chip">${t.name}</span></td>
+              <td>${fillBar(tokens, cap)}</td>
+              <td class="counter">${tokens.toFixed(1)} / ${cap}</td>
+              <td class="muted">${cap}/min</td>
+              <td class="muted">${lastRefill}</td>
+            </tr>`;
+          })
+        );
+        return `<table>
+          <thead><tr><th>tool</th><th>fill</th><th>tokens</th><th>capacity</th><th>last refill</th></tr></thead>
+          <tbody>${rows.join("")}</tbody>
+        </table>
+        <div class="muted" style="font-size:12px;margin-top:8px">
+          Showing the <code>tenant_tool:demo-tenant:&lt;tool&gt;</code> bucket per tool — the per-(tenant,tool) limit driven by each tool's registered perMinute. When a bucket drains, the gateway's rate-limit middleware durably sleeps the call via <code>ctx.sleep</code> until a token refills.
+        </div>`;
+      },
+    },
+    {
+      title: "Cost ledger (live, durable in Restate)",
+      render: async () => {
+        const summaries = await Promise.all(KNOWN_TENANTS.map(fetchCostSummary));
+        const populated = summaries.filter((s): s is CostSummary => !!s && (s.totalCents > 0 || s.entries.length > 0));
+        if (populated.length === 0) {
+          return `<div class="empty">No cost recorded yet.</div>`;
+        }
+        return populated
+          .map((s) => {
+            // aggregate per toolName
+            const byTool = new Map<string, { count: number; cents: number }>();
+            for (const e of s.entries) {
+              const cur = byTool.get(e.toolName) ?? { count: 0, cents: 0 };
+              cur.count += 1;
+              cur.cents += e.costCents;
+              byTool.set(e.toolName, cur);
+            }
+            const aggRows = [...byTool.entries()]
+              .sort((a, b) => b[1].cents - a[1].cents)
+              .map(
+                ([tool, v]) => `<tr>
+                  <td><span class="chip">${tool}</span></td>
+                  <td class="muted">${v.count}</td>
+                  <td class="counter">${v.cents}¢</td>
+                </tr>`
+              )
+              .join("");
+
+            const recent = s.entries
+              .slice(-10)
+              .reverse()
+              .map(
+                (e) => `<tr>
+                  <td class="muted">${new Date(e.timestampMs).toLocaleTimeString()}</td>
+                  <td><span class="chip">${e.toolName}</span></td>
+                  <td class="counter">${e.costCents}¢</td>
+                  <td class="muted">${e.sessionId}</td>
+                </tr>`
+              )
+              .join("");
+
+            return `<div style="margin-bottom:18px">
+              <div style="font-size:13px;margin-bottom:8px">
+                <strong>Tenant <code>${s.tenantId}</code></strong> · total spend
+                <span class="counter">${s.totalCents}¢</span>
+                (${(s.totalCents / 100).toFixed(2)} USD)
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:12px">
+                <div>
+                  <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">by tool/purpose</div>
+                  <table><tbody>${aggRows}</tbody></table>
+                </div>
+                <div>
+                  <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">last ${Math.min(10, s.entries.length)} entries</div>
+                  <table><tbody>${recent}</tbody></table>
+                </div>
+              </div>
+            </div>`;
+          })
+          .join("");
+      },
+    },
+    {
       title: "Recent calls",
       render: () => {
         const calls = recentCalls();
@@ -102,8 +261,13 @@ serveOpsView({
               .join(" — ");
             const waited = c.waitedMs ? ` <span class="muted">(+${c.waitedMs}ms rate-wait)</span>` : "";
             const cost = c.costCents ? ` <span class="muted">${c.costCents}¢</span>` : "";
+            const time = c.invocationId
+              ? `<a href="${adminUi}/ui/invocations/${encodeURIComponent(c.invocationId)}"
+                    target="_blank" class="muted"
+                    title="open in Restate admin">${new Date(c.timestampMs).toLocaleTimeString()} ↗</a>`
+              : `<span class="muted">${new Date(c.timestampMs).toLocaleTimeString()}</span>`;
             return `<tr>
-              <td class="muted">${new Date(c.timestampMs).toLocaleTimeString()}</td>
+              <td>${time}</td>
               <td><span class="chip">${c.toolName}</span></td>
               <td>${statusPill}</td>
               <td>${detail}${waited}${cost}</td>
@@ -113,7 +277,10 @@ serveOpsView({
         return `<table>
           <thead><tr><th>time</th><th>tool</th><th>outcome</th><th>detail</th></tr></thead>
           <tbody>${rows}</tbody>
-        </table>`;
+        </table>
+        <div class="muted" style="font-size:12px;margin-top:8px">
+          Click a timestamp to open the invocation's journal in the Restate admin UI.
+        </div>`;
       },
     },
     {
@@ -122,6 +289,7 @@ serveOpsView({
         <tr><td class="muted">restate port</td><td><code>:${port}</code></td></tr>
         <tr><td class="muted">ops view port</td><td><code>:${uiPort}</code></td></tr>
         <tr><td class="muted">restate services</td><td><code>Gateway</code>, <code>ToolRegistry</code>, <code>CostLedger</code>, <code>TokenBucket</code></td></tr>
+        <tr><td class="muted">admin UI</td><td><a href="${adminUi}/ui/" target="_blank">${adminUi}/ui/</a></td></tr>
       </table>`,
     },
   ],

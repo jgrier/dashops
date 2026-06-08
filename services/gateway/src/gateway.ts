@@ -29,6 +29,7 @@ export const gateway = restate.service({
     ): Promise<CallToolResponse> => {
       // Log every return path through a single helper. Wrapped in ctx.run so
       // replay (e.g. resume from a rate-limit ctx.sleep) doesn't dup-log.
+      const invocationId = ctx.request().id as string;
       const log = async (
         response: CallToolResponse,
         extras?: { waitedMs?: number }
@@ -39,6 +40,7 @@ export const gateway = restate.service({
             timestampMs: now,
             kind: "tool",
             toolName: req.toolName,
+            invocationId,
             status: response.status,
             source:
               response.blocked?.source ??
@@ -164,6 +166,7 @@ export const gateway = restate.service({
       req: CallLLMRequest
     ): Promise<CallLLMResponse> => {
       const now = await ctx.date.now();
+      const invocationId = ctx.request().id as string;
 
       const result = await ctx.genericCall<CallLLMRequest, CallLLMResponse>({
         service: "LLMService",
@@ -194,6 +197,7 @@ export const gateway = restate.service({
           timestampMs: now,
           kind: "llm",
           toolName: `llm:${req.purpose}`,
+          invocationId,
           status: result.status,
           reason: result.mode === "live" ? "live mode" : "stub mode",
           tenantId: req.identity.tenantId,

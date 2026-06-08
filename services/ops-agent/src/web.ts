@@ -101,6 +101,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return relay(r, res);
   }
 
+  if (pathname === "/api/approvals/history" && req.method === "GET") {
+    const group = url.searchParams.get("group") ?? "finance-leads";
+    const r = await fetch(
+      `${RESTATE_INGRESS}/DecidedApprovalsIndex/${encodeURIComponent(group)}/list`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }
+    );
+    return relay(r, res);
+  }
+
   const respondMatch = pathname.match(/^\/api\/approvals\/([^/]+)\/respond$/);
   if (respondMatch && req.method === "POST") {
     const approvalId = decodeURIComponent(respondMatch[1]);

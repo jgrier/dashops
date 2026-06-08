@@ -3,7 +3,24 @@ import type {
   ApprovalRequestPayload,
   ApprovalDecision,
   ApprovalRecord,
+  DecidedApprovalSummary,
 } from "@dashops/shared";
+
+// Fire-and-forget the decision summary into the per-group history index.
+// Single place so respond + cancel agree on the payload shape.
+function indexDecision(
+  ctx: restate.ObjectContext,
+  group: string,
+  summary: DecidedApprovalSummary
+): void {
+  ctx.genericSend({
+    service: "DecidedApprovalsIndex",
+    method: "add",
+    key: group,
+    parameter: summary,
+    inputSerde: restate.serde.json,
+  });
+}
 
 // ApprovalService — VO keyed by approval_id. One instance per pending
 // approval. Holds the awakeable id, the action context, the decision, and
@@ -62,14 +79,14 @@ export const approvalService = restate.object({
         throw new restate.TerminalError(`no awakeable id stored`);
       }
 
+      const decidedAtMs = await ctx.date.now();
       ctx.set("status", decision.approved ? "approved" : "rejected");
       ctx.set("decision", decision);
-      ctx.set("decidedAtMs", await ctx.date.now());
+      ctx.set("decidedAtMs", decidedAtMs);
 
       // Wake the ops-agent.
       ctx.resolveAwakeable(awakeableId, decision);
 
-      // Remove from index.
       const group = await ctx.get<string>("approverGroup");
       if (group) {
         ctx.genericSend({
@@ -79,6 +96,21 @@ export const approvalService = restate.object({
           parameter: { approvalId: ctx.key },
           inputSerde: restate.serde.json,
         });
+
+        // Audit log: snapshot the decision into the per-group history.
+        const initiator = (await ctx.get("initiator")) as ApprovalRecord["initiator"];
+        indexDecision(ctx, group, {
+          approvalId: ctx.key,
+          actionSummary: (await ctx.get<string>("actionSummary")) ?? "",
+          initiator: { userId: initiator?.userId ?? "?", sessionId: initiator?.sessionId ?? "?" },
+          createdAtMs: (await ctx.get<number>("createdAtMs")) ?? decidedAtMs,
+          decidedAtMs,
+          toolName: (await ctx.get<string>("toolName")) ?? "",
+          kind: ((await ctx.get<string>("kind")) ?? "approval") as "approval" | "appeal",
+          outcome: decision.approved ? "approved" : "rejected",
+          approverUserId: decision.approverUserId,
+          comment: decision.comment,
+        });
       }
       return { ok: true };
     },
@@ -86,8 +118,9 @@ export const approvalService = restate.object({
     cancel: async (ctx: restate.ObjectContext, reason: string): Promise<{ ok: true }> => {
       const status = await ctx.get<string>("status");
       if (status !== "pending") return { ok: true };
+      const decidedAtMs = await ctx.date.now();
       ctx.set("status", "cancelled");
-      ctx.set("decidedAtMs", await ctx.date.now());
+      ctx.set("decidedAtMs", decidedAtMs);
 
       const awakeableId = await ctx.get<string>("awakeableId");
       if (awakeableId) {
@@ -101,6 +134,19 @@ export const approvalService = restate.object({
           key: group,
           parameter: { approvalId: ctx.key },
           inputSerde: restate.serde.json,
+        });
+
+        const initiator = (await ctx.get("initiator")) as ApprovalRecord["initiator"];
+        indexDecision(ctx, group, {
+          approvalId: ctx.key,
+          actionSummary: (await ctx.get<string>("actionSummary")) ?? "",
+          initiator: { userId: initiator?.userId ?? "?", sessionId: initiator?.sessionId ?? "?" },
+          createdAtMs: (await ctx.get<number>("createdAtMs")) ?? decidedAtMs,
+          decidedAtMs,
+          toolName: (await ctx.get<string>("toolName")) ?? "",
+          kind: ((await ctx.get<string>("kind")) ?? "approval") as "approval" | "appeal",
+          outcome: "cancelled",
+          comment: `cancelled: ${reason}`,
         });
       }
       return { ok: true };

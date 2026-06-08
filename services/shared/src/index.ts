@@ -170,6 +170,22 @@ export interface PendingApprovalSummary {
   kind?: "approval" | "appeal";
 }
 
+// A decided approval (approved / rejected / cancelled) for the audit-trail
+// view in the approver UI. Captured at decision time so the history page
+// can render even after the per-approval VO state is garbage-collected.
+export interface DecidedApprovalSummary {
+  approvalId: string;
+  actionSummary: string;
+  initiator: { userId: string; sessionId: string };
+  createdAtMs: number;
+  decidedAtMs: number;
+  toolName: string;
+  kind: "approval" | "appeal";
+  outcome: "approved" | "rejected" | "cancelled";
+  approverUserId?: string;
+  comment?: string;
+}
+
 // ----- LLM gateway contracts ------------------------------------------------
 // Every LLM-shaped call in DashOps goes through the gateway's callLLM
 // handler, which dispatches to LLMService. Stub mode preserves today's
