@@ -1,329 +1,125 @@
-# DashOps Demo — Walkthrough
-
-This is the morning hand-off. The full demo arc from the spec works end-to-end. What's below: how to run it, what each scene shows, what changed overnight from the design we locked in, and what's deferred.
-
----
-
-## TL;DR — what works
+# DashOps demo — narrative for reviewers
 
-All five demo scenes are functional and verified:
-
-1. **Insight mode** — operator asks "what happened with delivery #12345?", agent runs a multi-step investigation, journals every step in the Restate UI.
-2. **PII guardrail** — gateway-side LLM-style middleware blocks calls whose params contain PII patterns.
-3. **Async HITL approval** — agent suspends on an awakeable for hours/days; resumes on approver click; **kill the ops-agent process mid-suspension and approval still completes the agent on restart.**
-4. **Hierarchical token-bucket rate limits** — 7 calls against a 6/min tool: first six instant, 7th durably suspended on `ctx.sleep`. No client-side retry loop anywhere — the answer to "who handles backoff when the tool's overloaded?"
-5. **Failure / patch / replay** — buggy `apply_credit` retries 3x, pauses; restart tool with patched code; `PATCH /invocations/{id}/resume`; replay continues from the failure point on the new code.
+A small reference platform built on [Restate](https://restate.dev) that shows how to host an agentic application without rebuilding the durability, policy, and human-in-the-loop machinery yourself. Read this before watching the demo so you'll know what each thing on screen is meant to prove.
 
----
+The mock domain is food-delivery operations — an "operator agent" investigates flagged deliveries and proposes corrective actions (credits, apology messages, merchant status checks). The domain isn't the point. The point is the platform underneath: what does it look like to build an agent on a runtime that makes every call durable, every approval async-and-resumable, every guardrail centralized, and every process kill-and-restartable?
 
-## Quick start
+## The shape of the platform in one breath
 
-```bash
-# from /Users/jgrier/src/jgrier/food-delivery
-bash scripts/start-all.sh
-```
+A human operator talks to a per-session agent. The agent calls tools and an LLM. Every one of those calls flows through a single **gateway** that enforces policy, records cost, rate-limits, and audits. The gateway is fronted by a **BFF** that serves every browser-facing page. Behind it all sits the **Restate runtime**, which makes every invocation durable, lets handlers suspend for hours on human approvals, and replays journaled work after any process death.
 
-This brings up `restate-server` (native binary) + all five Node services + registers everything. Then:
+A terminal-based **supervisor** spawns every process in the system — Restate itself, the BFF, all eight application services — and lets you kill or restart any of them with one keystroke. That's how we'll inject failures live during the demo.
 
-- **Operator UI**: <http://localhost:3000/operator>
-- **Approver UI**: <http://localhost:3000/approver>
-- **Restate admin UI**: <http://localhost:9070>
+See the architecture diagram and process inventory in [README.md](./README.md) — this doc is the narrative; that one is the structural reference.
 
-Shut it all down:
+## How to follow along
 
-```bash
-bash scripts/stop-all.sh
-```
+When the demo runs, two browser tabs will be open:
 
----
+- <http://localhost:3001/operator> — the operator chat. This is where the action happens.
+- <http://localhost:3001/approver> — the approver inbox. The approver is a different role; in this demo we'll switch tabs to play both parts.
 
-## Architecture (what got built)
+A third surface worth pulling up:
 
-```
-              ┌─────────────┐                        ┌─────────────┐
-              │ Operator UI │                        │ Approver UI │
-              │   :3000     │                        │   :3000     │
-              │ /operator   │                        │ /approver   │
-              └──────┬──────┘                        └──────┬──────┘
-                     │ POST /api/sessions/X/messages       │ POST /api/approvals/X/respond
-                     │ GET  /api/sessions/X                │ GET  /api/approvals/pending?group=...
-                     ▼                                      ▼
-                ┌─────────────────────────────────────────────────┐
-                │             Ops-agent web bridge                │
-                │       (HTTP/SSE proxy → Restate ingress)        │
-                └────────────────────┬────────────────────────────┘
-                                     │ Restate ingress :8080
-                                     ▼
-                     ┌────────────────────────────────────┐
-                     │           Restate runtime          │
-                     │ (8080 ingress · 9070 admin/UI)     │
-                     └─┬───────┬──────┬───────┬──────┬────┘
-                       │       │      │       │      │
-                       ▼       ▼      ▼       ▼      ▼
-                   Session  Gateway  Tools  Guard-  Approval-
-                   (TS)     (TS)     (TS)   rails   service
-                                            (TS)    (TS)
+- <http://localhost:3001/services> — a portal of "ops pages" for each service. Per-service state — registered tools, recent gateway calls, durable token-bucket fill, per-tenant cost — is all visible here. The same data the platform team would use in production.
 
-  Session VO              keyed by session_id     — operator chat state, reagent loop
-  Gateway service         single endpoint         — registry lookup → guardrail → policy
-                                                    → token bucket → identity → dispatch → cost
-  ToolRegistry VO         keyed by "default"      — dynamic tool registration
-  CostLedger VO           keyed by tenant_id      — per-tenant cost ledger
-  TokenBucket VO          keyed by resource       — hierarchical rate limits
-  Tools (Restate services): DeliveryLookup, CustomerLookup, EscalationHistory,
-                           SemanticSearch, ApplyCredit, CustomerOutreach,
-                           MerchantStatus
-  PIIGuardrail service    — regex pre-screen; LLM upgrade ready (see "deferred")
-  ApprovalService VO      keyed by approval_id    — awakeable handle, audit
-  PendingApprovalsIndex VO keyed by approver_grp  — UI poll source
-```
+A fourth, when we want to prove durability:
 
-Everything runs in TypeScript. Single language, single repo, npm workspaces.
+- <http://localhost:9070/ui/> — Restate's own admin UI. Shows the invocation journal for every call. The gateway's recent-calls table deep-links into this.
 
----
+And a fifth, in the terminal where the demo was launched:
 
-## Demo scenes — exact steps
+- The **supervisor TUI** — a live table of every supervised process. This is where we'll kill and restart things during the failure-injection finale.
 
-### Setup
+## The four scenes you'll see
 
-Before walking through, make sure the system is up and clean. The seed chips in the operator UI are pre-populated for these scenarios.
+### 1. An ordinary agent turn
 
-### Scene 1 — Insight mode + durable mesh (2 min)
+In the operator UI: *"What happened with delivery #12345?"*
 
-**Operator UI** → click chip *"What happened with delivery #12345?"* → Send.
+The agent does what a human ops engineer would: looks up the delivery, pulls the escalation history, gets the customer profile, decides there's an unresolved complaint, and writes a summary. Three tool calls and a final reply.
 
-You should see, streamed live:
+**What to watch:** open the gateway ops page (`/ops/gateway`) while this runs. You'll see four rows appear in the "recent calls" table, **grouped under a single colored cluster** — that's "one operator click = one agent turn", made visible because the agent's session id propagates as a `traceId` through every downstream call. Each row has a timestamp that deep-links to the Restate admin UI; click one to see the durable journal of that call.
 
-1. `[assistant] Let me start by pulling up delivery #12345.`
-2. `[tool · delivery_lookup]` → delivery JSON with issues
-3. `[assistant] Checking the escalation history for this delivery.`
-4. `[tool · escalation_history]` → 3 escalations, last satisfaction 1/5
-5. `[assistant] Looking up the customer's profile…`
-6. `[tool · customer_lookup]` → Aiyana Patel, gold tier
-7. `[assistant] I have what I need. Putting the summary together.`
-8. `[assistant]` final markdown report
+**The point:** the gateway is in the path of every external action the agent took. We didn't have to instrument anything in the agent or the tool services to get this visibility. The audit log, the cost ledger, the rate-limit decision, the deep-link to the journal — they all came from one centralized chokepoint.
 
-**Pivot to Restate UI** (<http://localhost:9070>) → Invocations tab → click into the `Session/X/sendMessage` invocation → see the journal: every tool call, every state mutation, all linked.
+### 2. An action that needs human approval
 
-Talking points:
-- *Every hop is durable. Every call is in the journal. We didn't write any retry or persistence code — it's all the substrate.*
+In the operator UI: *"Apologize and credit $20 to the customer of delivery #12345"*
 
-### Scene 2 — Guardrail middleware (1 min)
+The agent walks through the same investigation, then proposes `apply_credit($20)`. The gateway's approval policy sees an amount above $10 and returns `needs_approval`. The agent **suspends** on an awakeable — its handler stops mid-execution, waiting on a future resolution.
 
-**Operator UI** → chip *"Find complaints (PII)"* — this issues a search containing `555-867-5309` as a phone number.
+Switch to the approver tab. A new card has appeared in the `finance-leads` queue. The approver clicks Approve. The awakeable resolves, the agent's `sendMessage` handler picks up where it left off, retries the gateway call with a fingerprint-bound approval token, completes the credit, then writes its summary reply.
 
-You should see:
+**What to watch:** the operator tab's input field grays out (`Waiting on approval decision…`) while the agent is suspended. The approver tab's `finance-leads` pill shows a count badge. The "Decided" sub-tab in the approver UI keeps a durable audit log of every decision — same data lives in a `DecidedApprovalsIndex` VO per group.
 
-1. `[assistant] Let me search for similar past complaints.`
-2. `[system] Gateway blocked the call to semantic_search: Detected possible PII in tool params: phone (555-867-5309)`
+**The point that matters most:** the agent's handler can sit suspended for an arbitrarily long time. Kill `ops-agent` mid-suspension from the supervisor TUI and the approval still completes successfully — the runtime stores the awakeable and resumes the handler on a fresh process. This is not retry-with-checkpointing; it's *the same invocation, paused on disk, picking back up from exactly the right line of code*.
 
-The session ends in `failed` state with the PII reason as `failureReason`.
+### 3. A guardrail that blocks, and the appeal path
 
-Talking points:
-- *The gateway's a cross-cutting middleware point. The guardrail is just another Restate service in the pipeline — durable like everything else.*
+In the operator UI: *"find similar complaints from customer at 555-867-5309"*
 
-### Scene 3 — Async HITL approval (4 min — the centerpiece)
+The agent decides to call `semantic_search`. The gateway's PII middleware runs its classifier — sees a phone number in the parameters — and returns `block_appealable`. The chat shows a system message: **"Blocked by pii-guardrail: Detected possible PII…"** with a button: **"Request review from ops-managers"**.
 
-**Operator UI** → chip *"Apologize + $20 credit (delivery #12345)"* → Send.
+The operator clicks it. The agent fires off a new approval request to a *different* approver group (`ops-managers`, not `finance-leads` this time — different policy concerns, different humans).
 
-You see investigation steps as in Scene 1, then:
+Switch to the approver tab and pick the `ops-managers` group. The pending row carries an **APPEAL** chip — same UI for approvals and appeals, but flagged differently so the reviewer knows what they're being asked. Click Approve. The agent retries the call with an *appeal token* — bound to the exact call by a fingerprint of `(toolName, params)` — and the gateway, after verifying the token, lets this one call bypass the PII middleware. The search completes; the agent finishes its turn.
 
-- `[assistant] Applying a $20.00 credit to Aiyana Patel given the unresolved escalation.`
-- `[system] Waiting on approval from finance-leads: Apply $20.00 credit…`
-- Pending-approval banner appears across the top of the operator UI.
+**The point:** safety middleware that *blocks but offers an escape hatch* is a real platform requirement. The gateway implements it generically — any future middleware can return `block_appealable` and route to whichever approver group is appropriate. The token verification is the same machinery as a normal approval; the only difference is which middleware gets selectively bypassed.
 
-**Open the Approver UI** in another window. Group dropdown → `finance-leads`. A card appears with the pending approval. Type a reason if you want, click **Approve**.
+### 4. Durable queueing under rate limit
 
-Watch the operator UI: `[system] Approved by approver-xxxx. Proceeding with apply_credit.` → `[tool · apply_credit]` → next step.
+In the operator UI: *"check merchants for deliveries 12345, 12346, 12399"*
 
-Then a second approval lands for the outreach (`ops-managers` group). Switch the approver dropdown to `ops-managers`. Click **Approve**. Operator UI completes: *"Action complete for delivery #12345. Credited $20.00 to Aiyana Patel… Sent apology_with_credit…"*
+The agent fires three `merchant_status` calls in sequence. The tool's rate limit is **6 per minute**, so the first calls go through instantly. To make the queueing visible, fire a bigger burst (12+ rapid calls) and the gateway has to start sleeping.
 
-**The killer beat (rehearse before doing live):**
+What happens when a bucket runs out: the gateway's rate-limit middleware calls `ctx.sleep(waitMs)`. This is **durable sleep** — the invocation pauses; if the gateway crashes mid-sleep, the wake-up still happens on the new process exactly when it was scheduled. No client-side retry loop anywhere.
 
-While the agent is in `needs_approval` state:
+**Open `/ops/gateway` and scroll to the "Rate-limit buckets" section while the burst runs.** You'll see `merchant_status` drain from 6 to 0 in one refresh, then climb back up by one token every 10 seconds — the tokens are computed live, not stored stale. Each row also has live `−` / `+` buttons — you can drop the rate limit from 6 to 2 while the demo is running and watch the next call back up even further. (The change writes through to a durable VO; restarting the service preserves it.)
 
-```bash
-# kill ONLY the ops-agent listener (filter is critical — see "lessons learned" below)
-kill $(lsof -nP -iTCP:9083 -sTCP:LISTEN -ti) $(lsof -nP -iTCP:3000 -sTCP:LISTEN -ti)
-```
+**The point:** rate limits aren't a property of any individual tool or any individual client — they're a platform concern enforced once, with durable queueing as the default. The agent code is identical whether the call goes through instantly or sleeps for 30 seconds.
 
-The ops-agent process is gone. Wait 10 seconds (in the narration: hours or days). Now restart it:
+## The finale — pull every pin
 
-```bash
-cd services/ops-agent && npm run dev &
-```
+This is optional depending on time, but it's the most visceral demonstration of what "durable" actually means.
 
-The session state is still readable (Restate is the source of truth). Click **Approve** in the approver UI. Watch the agent resume on the brand-new process — same conversation, same session_id, no work redone.
+**Setup:** trigger a needs-approval action ("Apologize + $20 credit") and stop at the moment the agent is suspended on the approval awakeable.
 
-Talking points:
-- *That suspended invocation held zero compute. No timer, no thread. Just durable state in Restate. It could have been suspended for a week.*
-- *And it resumed on a process that didn't exist when it started.*
+**In the supervisor TUI, press `k` on, in order:**
 
-### Scene 4 — Rate limit / "who handles retry" (1.5 min)
+1. `ops-agent` — the agent process is now dead
+2. `approval-service` — the approval state appears unreachable
+3. `gateway` — the gateway is unreachable
+4. `llm-svc` — the LLM service is unreachable
+5. `restate-server` — *the runtime itself is dead*
 
-**Operator UI** → chip *"Merchant batch (rate-limit)"*. This fires 7 `merchant_status` calls. The tool is registered at 6/min in the registry.
+Every browser surface now shows errors. From the outside this looks unrecoverable.
 
-You'll see the first 6 tool entries appear almost instantly. The 7th sits — the agent's status stays at `calling_tool`. After ~10 seconds, the 7th completes. Total session time ≈ 11s.
+**Now press `s` on each, in roughly the reverse order**: `restate-server`, then `approval-service`, `gateway`, `llm-svc`, `ops-agent`.
 
-**Pivot to Restate UI** during the wait → invocations list → the `Gateway/callTool` invocation is in a `Suspended` state, waiting on a `ctx.sleep`.
+Switch to the approver tab and reload. **The pending approval is still there**, exactly as it was before the world ended. Click Approve.
 
-Talking points:
-- *The agent is NOT retrying. There's no client-side backoff loop. The gateway's handler is durably suspended on `ctx.sleep`. Same code works for 7 calls or 7 million.*
-- *In Restate 1.8 (next quarter), vqueues will give you richer N-concurrent-per-key with budget tracking. Today, per-key serialization + token-bucket VOs already cover what most rate-limit needs look like.*
+In the operator tab: the suspended agent picks back up from journal, completes the credit, replays the rest of its turn, writes the closing reply. The chat now shows the action completed as if nothing happened.
 
-### Scene 5 — Failure, patch, replay (3 min — Stephan's moment)
+**What this proves:**
 
-**Pre-stage**: tools service must be running with `BUGGY_MODE=1`.
+- Every VO's state survived the runtime restart — chat history, pending approval, cost ledger entries.
+- The suspended handler resumed *from the right line of code*. No work was redone. No work was lost.
+- The approval's awakeable was reachable again the moment its service came back, even though the runtime had been killed in between.
+- The supervisor's TUI is the entire failure-injection control plane. No special tooling.
 
-```bash
-bash scripts/stop-all.sh
-BUGGY_MODE=1 bash scripts/start-all.sh   # note: TOOLS_ENV passed through
-```
+You can do simpler variants on the same theme — kill just `gateway` and watch in-flight calls hang until you bring it back, then succeed; kill `bff` and the chat UI goes dark but no state is lost. The fullest version is the most memorable, time permitting.
 
-Actually simpler — restart just tools with the env var:
+## What's not part of the script but is in the codebase
 
-```bash
-kill $(lsof -nP -iTCP:9082 -sTCP:LISTEN -ti)
-( cd services/tools && BUGGY_MODE=1 npm run dev > /tmp/dashops-tools.log 2>&1 & )
-disown
-```
+A few things present in the repo but not part of the demo arc, in case anyone notices and asks:
 
-**Operator UI** → type *"Apologize and credit $19.50 to customer of delivery #12345"* → Send.
+- **Live LLM mode.** All LLM calls today use deterministic stubs so the demo is reproducible. Setting `ANTHROPIC_API_KEY` flips `llm-svc` to a real Anthropic SDK call without changing any caller. Not showing this tomorrow but it's a one-env-var flip.
+- **`apply_credit` buggy mode.** There's an `onMaxAttempts: pause` configuration on the credit tool that combines with a deliberate non-whole-dollar bug under `BUGGY_MODE=1` to demonstrate "fail 3× → pause invocation → patch the code → resume from the failure point." This is the strongest single demo of Restate's pause/replay capability, but it requires editing a file mid-demo, which is awkward to script. Probably skip; mention if someone asks "what about deploys with bugs?"
+- **Multi-tenant cost.** Today the demo runs as one operator tenant. The `CostLedger` is keyed by tenant id; the platform itself is *already* its own tenant — every PII-classifier LLM call bills the `platform` tenant rather than the operator, so the cost ledger page on `/ops/gateway` shows two cards: one for the operator, one for the platform's own overhead. Worth pointing out — a real production system bills cross-cutting safety to the platform, not the user.
 
-Agent investigates, asks for finance approval, approver approves. Then:
+## One-line take-aways
 
-- `[system] Approved by … Proceeding with apply_credit.`
-- (Agent hangs in `calling_tool` state.)
-
-Behind the scenes: `apply_credit` retries 3 times with backoff (~3 seconds), then Restate pauses the invocation per the configured `onMaxAttempts: 'pause'`.
-
-**Pivot to Restate UI** → Invocations → the paused `ApplyCredit/execute` invocation shows in red/orange. Click into it → see the journal, see the error: `amount_cents must be a multiple of 100 (got 1950)`.
-
-**Deploy the patch:** kill the buggy tools service, restart without `BUGGY_MODE`:
-
-```bash
-kill $(lsof -nP -iTCP:9082 -sTCP:LISTEN -ti)
-( cd services/tools && npm run dev > /tmp/dashops-tools.log 2>&1 & )
-disown
-```
-
-**Resume the paused invocation:**
-
-In the Restate UI, click the paused invocation → click "Resume" button. Or via curl:
-
-```bash
-PAUSED=$(curl -s http://localhost:9070/openapi >/dev/null; echo "<get from UI>")
-curl -X PATCH "http://localhost:9070/invocations/${PAUSED}/resume"
-```
-
-Watch the operator UI: `[tool · apply_credit]` appears with the credit result. Agent moves on to `customer_outreach`, which lands a second approval — switch dropdown, approve.
-
-Final: `**Action complete for delivery #12345.** Credited $19.50 to Aiyana Patel (credit id …). Sent apology_with_credit message (id …).`
-
-Talking points:
-- *That conversation started ten minutes ago. The agent didn't redo any earlier work. The patch ran from exactly the point of failure forward.*
-- *In Stephan's words: 'take a failed invocation, inject a patch, resume from exactly that point.' That just happened.*
-
----
-
-## Notable decisions made overnight (different from the spec)
-
-### Gateway is TypeScript, not Kotlin
-
-The spec called for the gateway to be in Kotlin (matches the typical "platform-infrastructure-in-a-JVM-language" stack). I started in Kotlin and hit two issues that ate hours:
-
-1. JDK 25 (default Homebrew openjdk) breaks Kotlin 2.0/2.2 — had to pin a JDK 21 toolchain.
-2. The Kotlin SDK's dynamic-dispatch API (`Request.of(Target.X, TypeTag.of, …)`) for calling Restate services by string name (which the gateway needs because tools are TS, not generated Kotlin clients) wasn't documented and took significant trial-and-error to find.
-
-For demo velocity, I switched the gateway to TypeScript. Architecturally identical, demo-wise identical. Worth framing as: *"This would naturally be Kotlin (or your platform language) in production — the architecture is the same; we shipped this demo in TS so everything was one language. Restate has Kotlin/Java/Go SDKs ready for the port."*
-
-The original Kotlin scaffold lives in git history if you want to point at it.
-
-### Restate runs natively, not in Docker
-
-Docker Desktop's daemon kept dying mid-build (sleep/resource pressure, not investigated deeply). The native `restate-server` binary is installed via Homebrew at the same version (1.6.2). `docker-compose.yml` is still in the repo for users who prefer it, but `scripts/start-all.sh` uses the native binary.
-
-### Polyglot story is deferred
-
-The pitch I'd designed was "TS for agents, Kotlin for platform infrastructure." V1 is all TypeScript. Not a fatal compromise — we can mention this in narration. But if you want to demonstrate polyglot live, porting the gateway to Kotlin is a contained next step.
-
-### `ctx.date.now()` everywhere, not `Date.now()`
-
-The kill-the-process demo (Scene 3 finale) doesn't work if any handler uses `Date.now()` directly — replay produces a different value than the original, and Restate aborts the replay with a "code paths diverged" error. All handlers now use `await ctx.date.now()`. Learned this the hard way; mention if asked about determinism.
-
-### LLM is stubbed, not live
-
-The agent's "LLM" is a pattern-matching state machine in `services/ops-agent/src/llm.ts`. It handles:
-- delivery investigation (`what happened with delivery #X`)
-- corrective action (`apologize and credit $Y`) — triggers full HITL flow
-- semantic search (`find complaints …`) — triggers PII guardrail when params contain PII
-- merchant batch (`check merchants for deliveries A, B, C, …`) — triggers rate-limit demo
-
-For a live Anthropic-backed LLM, see `services/ops-agent/src/llm.ts` — would swap `planNext` for a real `messages.create` call with a tool-use schema. Deferred for time.
-
----
-
-## Deferred (Phase 6 polish, not built)
-
-- **Mock OAuth + Credentials VO** with proactive token refresh. The gateway's pipeline has a comment placeholder for step 7 (credentials); no real implementation. The pattern (`Credentials` VO with `getToken/refresh`, durable timer for proactive refresh, per-key serialization to prevent thundering herd) is well-understood and a half-day port.
-- **Live Anthropic LLM** for the agent. Stub mode covers all the demo flows; the LLM client interface is small.
-- **Cost ledger UI surface.** The ledger works (`Restate ingress → /CostLedger/{tenant}/summary`); just no dedicated UI page. Surface it via curl in the demo.
-- **Approval timeout / escalation timer.** OA-D3 in the design — schedule a `ctx.sleep` reminder + auto-fail in the approval VO. Not built; mention as the natural place this lives.
-- **Audit-record query UI.** Approval records are queryable via Restate's `/ApprovalService/{id}/getRecord` — no dedicated UI.
-
----
-
-## Lessons learned (saved you from re-discovering)
-
-### `lsof -ti:<port>` is dangerous
-
-Without `-sTCP:LISTEN`, lsof returns ALL PIDs with sockets on that port — including *clients* connected to the server. `kill $(lsof -ti:9082)` ended up killing `restate-server` repeatedly because it had open connections to the service discovery endpoint.
-
-Correct form: `lsof -nP -iTCP:9082 -sTCP:LISTEN -ti`.
-
-`scripts/stop-all.sh` uses the safe form.
-
-### Restate Kotlin SDK 2.4.1 requires Kotlin 2.2.x metadata, not 2.0.x
-
-Hit this in Phase 0. Pinned to Kotlin 2.2.10 + KSP 2.2.10-2.0.2. JDK toolchain 21 (not 25).
-
-### `genericCall` defaults to `Uint8Array` serdes
-
-If you don't pass `inputSerde: restate.serde.json` (and `outputSerde`), the parameter is treated as bytes and your typed handler sees `undefined` for the input field. The TypeError stack trace was deceptive — looked like a code bug, was actually a wire format issue.
-
----
-
-## Repo tour
-
-```
-services/
-├── shared/             types (CallerIdentity, SessionState, ApprovalRecord, …)
-├── gateway/            Gateway, ToolRegistry, CostLedger, TokenBucket — the chokepoint
-├── tools/              7 mock MCPs as Restate services
-├── ops-agent/          Session VO + reagent loop + web bridge
-├── guardrails/         PIIGuardrail
-└── approval-service/   ApprovalService + PendingApprovalsIndex
-
-web/
-├── operator/           chat UI + status banner + seed chips
-└── approver/           approval card dashboard
-
-scripts/
-├── start-all.sh        bring everything up + register
-├── stop-all.sh         safe shutdown
-└── register.sh         register deployments + bootstrap tool registry
-```
-
----
-
-## What to ask in the morning
-
-If anything in here doesn't match expectations:
-
-1. **Want the Kotlin gateway back?** It's a contained port — most of the gateway logic moves into Kotlin with the dynamic-dispatch pattern from the Java examples.
-2. **Want the LLM live?** Small swap in `llm.ts`. Could wire to Claude Haiku in 30 lines.
-3. **Want the credential VO built?** Half-day; clean addition to the gateway pipeline.
-4. **Want a different demo scenario emphasized?** The seed chips in the operator UI are the easy edit point.
-5. **Want this dockerized cleanly?** `docker-compose.yml` is still in the repo; was the original plan; Docker just needs to be reliable in your dev env.
-
-Otherwise, I'd suggest dry-running Scenes 1 → 3 → 5 in that order, since those are the strongest beats. Scenes 2 and 4 are good supporting material if the audience asks the right questions.
+- **Building agent platforms on Restate gets you durable execution, awakeable-based human-in-the-loop, and journal-based observability essentially for free.**
+- **The single biggest architectural payoff is the gateway pattern** — route every tool call AND every LLM call through one chokepoint. Cost, policy, rate limits, audit, and approvals stop being everybody's problem.
+- **Operationally durable means literally durable** — the system survives killing every process, including the runtime itself, with no work lost. That's the demo finale.
