@@ -3,10 +3,12 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { services } from "./config.js";
 import * as procs from "./procs.js";
+import { handleBff } from "./bff.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..", "..", "..");
+const WEB_ROOT = path.resolve(ROOT, "web");
 
 // Make sure each spec is resolved to an absolute cwd before spawning.
 for (const s of services) {
@@ -93,6 +95,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
   const p = url.pathname;
 
+  // ---- BFF (stateless): chat UIs + Restate proxies + services portal ----
+  // Try this first. Any browser-facing or app-data route is here, and the
+  // handler does no in-process state lookups on the supervisor side.
+  if (await handleBff(req, res, WEB_ROOT)) return;
+
+  // ---- Control plane (stateful): process management API ----
+
   // GET /api/state — snapshot of every supervised service
   if (p === "/api/state" && req.method === "GET") {
     const states = await Promise.all(
@@ -146,8 +155,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return;
   }
 
-  // GET / — UI shell
-  if (p === "/" || p === "/index.html") {
+  // GET /supervisor — control panel
+  if (p === "/supervisor" || p === "/supervisor/") {
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.end(renderUi());
     return;
@@ -221,10 +230,10 @@ code { font-family: ui-monospace, monospace; font-size: 12px; color: #88c0d0; }
 </head>
 <body>
 <div class="topnav">
-  <a href="http://localhost:3000/operator">operator</a>
-  <a href="http://localhost:3000/approver">approver</a>
-  <a href="http://localhost:3000/services">services</a>
-  <a href="/" class="active">supervisor</a>
+  <a href="/operator">operator</a>
+  <a href="/approver">approver</a>
+  <a href="/services">services</a>
+  <a href="/supervisor" class="active">supervisor</a>
 </div>
 <div class="container">
   <h1>Supervisor</h1>

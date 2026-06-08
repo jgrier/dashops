@@ -60,9 +60,10 @@ cat <<EOF
 All up.
 
   Restate admin UI : http://localhost:9070
-  Operator UI      : http://localhost:3000/operator
-  Approver UI      : http://localhost:3000/approver
-  Services portal  : http://localhost:3000/services
+  Note: this script is the legacy entry point. The recommended way to run
+  the demo is the supervisor: `npm run dev:supervisor` from the repo root.
+  All browser UIs now live at http://localhost:3001/* (operator, approver,
+  services, supervisor) — there is no longer a web bridge on :3000.
 
 Logs:
   tail -f /tmp/dashops-restate.log

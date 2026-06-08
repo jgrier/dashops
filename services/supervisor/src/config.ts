@@ -68,7 +68,7 @@ export const services: ServiceSpec[] = [
     port: 9083,
     uiPort: 9183,
     registerDeployment: true,
-    role: "Per-session VOs + web bridge (operator/approver UIs, services portal)",
+    role: "Per-session VOs (Session). Chat UIs moved to the supervisor BFF.",
   },
   {
     name: "guardrails",

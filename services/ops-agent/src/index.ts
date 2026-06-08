@@ -1,16 +1,17 @@
 import * as restate from "@restatedev/restate-sdk";
 import { serveOpsView } from "@dashops/shared";
 import { session } from "./session.js";
-import { startWebBridge } from "./web.js";
 
 const port = parseInt(process.env.PORT ?? "9083", 10);
-const webPort = parseInt(process.env.WEB_PORT ?? "3000", 10);
 const uiPort = parseInt(process.env.UI_PORT ?? String(port + 100), 10);
 
 restate.serve({ services: [session], port });
 console.log(`Ops-agent (Session VO) listening on :${port}`);
 
-startWebBridge(webPort);
+// NB: the operator/approver/services chat UIs no longer live here. They
+// moved to the supervisor (services/supervisor/src/bff.ts) so killing
+// ops-agent for failure-injection demos doesn't take the UI down with it.
+// This Restate service is now strictly the Session VO + its ops view.
 
 serveOpsView({
   port: uiPort,
@@ -36,15 +37,14 @@ serveOpsView({
     {
       title: "Live chat surfaces",
       render: () => `<table>
-        <tr><td class="muted">operator UI</td><td><a href="http://localhost:3000/operator">http://localhost:3000/operator</a></td></tr>
-        <tr><td class="muted">approver UI</td><td><a href="http://localhost:3000/approver">http://localhost:3000/approver</a></td></tr>
+        <tr><td class="muted">operator UI</td><td><a href="http://localhost:3001/operator">http://localhost:3001/operator</a></td></tr>
+        <tr><td class="muted">approver UI</td><td><a href="http://localhost:3001/approver">http://localhost:3001/approver</a></td></tr>
       </table>`,
     },
     {
       title: "Service info",
       render: () => `<table>
         <tr><td class="muted">restate port</td><td><code>:${port}</code></td></tr>
-        <tr><td class="muted">web bridge port</td><td><code>:${webPort}</code></td></tr>
         <tr><td class="muted">ops view port</td><td><code>:${uiPort}</code></td></tr>
         <tr><td class="muted">restate services</td><td><code>Session</code></td></tr>
       </table>`,

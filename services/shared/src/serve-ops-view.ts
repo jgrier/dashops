@@ -98,10 +98,10 @@ code { font-family: ui-monospace, monospace; font-size: 12px; color: var(--chip-
 <body>
 <div class="topnav">
   <nav>
-    <a href="http://localhost:3000/operator">operator</a>
-    <a href="http://localhost:3000/approver">approver</a>
-    <a href="http://localhost:3000/services">services</a>
-    <a href="http://localhost:3001/">supervisor</a>
+    <a href="http://localhost:3001/operator">operator</a>
+    <a href="http://localhost:3001/approver">approver</a>
+    <a href="http://localhost:3001/services">services</a>
+    <a href="http://localhost:3001/supervisor">supervisor</a>
   </nav>
   <span class="muted">auto-refresh: 3s</span>
 </div>
