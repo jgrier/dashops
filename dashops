@@ -1,9 +1,26 @@
 #!/usr/bin/env bash
 # DashOps launcher — runs the supervisor TUI.
-# Equivalent to `npm run dev:supervisor`, but shorter to type and
-# pins the working directory to the repo root regardless of where
-# you invoke it from.
+#
+# Self-bootstrapping: on a fresh clone (no node_modules) or after a
+# package.json change, this runs `npm install` before launching. After
+# that, equivalent to `npm run dev:supervisor` but shorter to type and
+# pins the working directory to the repo root no matter where it's
+# invoked from.
+#
+# Only external prereqs: Node >= 20 (with npm) and a running Docker daemon.
 
 set -e
 cd "$(dirname "$0")"
+
+# Reinstall when there's no node_modules at all, or when package.json
+# has been edited since the last install (covers `git pull` adding deps).
+need_install=0
+[ ! -d node_modules ]                        && need_install=1
+[ package.json -nt node_modules ]            && need_install=1
+[ package-lock.json -nt node_modules ]       && need_install=1
+if [ "$need_install" = "1" ]; then
+  echo "→ installing dependencies (one-time setup)…"
+  npm install
+fi
+
 exec npm run dev:supervisor
