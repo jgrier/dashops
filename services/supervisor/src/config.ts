@@ -23,11 +23,14 @@ export interface ServiceSpec {
 export const services: ServiceSpec[] = [
   {
     name: "restate-server",
-    command: "restate-server",
-    args: ["--no-logo"],
+    // Spawned via the repo's docker-compose.yml so contributors don't need
+    // a separately-installed restate-server binary. The image version is
+    // pinned in compose; state lives in ./restate-data on the host.
+    command: "docker",
+    args: ["compose", "up", "restate", "--no-color"],
     port: 9070,
     registerDeployment: false,
-    role: "Restate runtime — durable execution, VO state, journal storage",
+    role: "Restate runtime — durable execution, VO state, journal storage (Docker)",
   },
   {
     name: "bff",

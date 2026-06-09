@@ -16,6 +16,11 @@ for (const s of services) {
 procs.init(services);
 
 const ADMIN_REGISTER = process.env.RESTATE_ADMIN ?? "http://localhost:9070";
+// Hostname Restate uses when calling back into our services. Restate now
+// runs in Docker, so `localhost` from inside the container would mean the
+// container itself; `host.docker.internal` (with extra_hosts in compose)
+// resolves to the actual host on both Mac and Linux.
+const DEPLOYMENT_HOST = process.env.RESTATE_DEPLOYMENT_HOST ?? "host.docker.internal";
 
 // After Restate is healthy and a service is listening, post its endpoint to
 // Restate's /deployments. Skipped for HTTP-only children like the BFF and
@@ -26,7 +31,7 @@ async function registerDeployment(port: number, name: string): Promise<void> {
       const r = await fetch(`${ADMIN_REGISTER}/deployments`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ uri: `http://localhost:${port}`, force: true }),
+        body: JSON.stringify({ uri: `http://${DEPLOYMENT_HOST}:${port}`, force: true }),
       });
       if (r.ok) {
         const proc = procs.getState(name);

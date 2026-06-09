@@ -124,13 +124,16 @@ export async function stop(name: string, signal: NodeJS.Signals = "SIGTERM"): Pr
   state.status = "stopped";
   state.log.push(`[supervisor] stopping (${signal})`);
   state.proc.kill(signal);
-  // best-effort hard-kill if it lingers
+  // Best-effort hard-kill if it lingers. The default is generous because
+  // `docker compose up` takes ~10s to stop its container gracefully on
+  // SIGTERM; bumping the timeout lets the container shut down cleanly
+  // instead of leaking after a TUI `k` keypress.
   setTimeout(() => {
     if (state.proc && !state.proc.killed) {
       state.log.push(`[supervisor] forcing SIGKILL`);
       state.proc.kill("SIGKILL");
     }
-  }, 3000);
+  }, 15000);
 }
 
 export async function restart(name: string): Promise<void> {

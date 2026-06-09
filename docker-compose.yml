@@ -2,6 +2,12 @@ services:
   restate:
     image: docker.restate.dev/restatedev/restate:1.6.2
     container_name: dashops_restate
+    # Pin an explicit node name so the on-disk data dir is portable across
+    # machines and across host-vs-container installs. Without this the
+    # default node name is the container id (or the host hostname for the
+    # native binary), which means existing data can't be re-opened from a
+    # different environment.
+    command: ["--node-name", "dashops", "--no-logo"]
     ports:
       - "8080:8080"   # ingress: HTTP into the cluster
       - "9070:9070"   # admin + Web UI

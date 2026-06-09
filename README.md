@@ -4,6 +4,8 @@ A small but complete agent platform built on [Restate](https://restate.dev). An 
 
 ## Running it
 
+Prerequisites: Node 20+, npm, and a running Docker daemon (the Restate runtime is spawned via the repo's `docker-compose.yml`, so you don't need a separately-installed `restate-server` binary).
+
 From a terminal at the repo root:
 
 ```sh
@@ -12,7 +14,7 @@ From a terminal at the repo root:
 
 (equivalent: `npm start` or `npm run dev:supervisor`)
 
-That launches the **supervisor TUI**. The supervisor is the one process you'll start by hand; it spawns every other process as a child — including `restate-server` itself. The TUI shows a live table of every supervised process with its status, PID, uptime, and port. Keys:
+That launches the **supervisor TUI**. The supervisor is the one process you'll start by hand; it spawns every other process as a child — including the Restate runtime container itself. The TUI shows a live table of every supervised process with its status, PID, uptime, and port. Keys:
 
 | Key | Action |
 |---|---|
