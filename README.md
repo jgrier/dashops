@@ -51,91 +51,18 @@ Once the operator UI is open at <http://localhost:3001/operator>:
 
 ## Architecture
 
-```mermaid
-flowchart TB
-  classDef ext fill:#1e293b,stroke:#64748b,color:#f1f5f9
-  classDef bff fill:#0e3a4a,stroke:#88c0d0,color:#88c0d0
-  classDef agent fill:#1e3a1e,stroke:#7dd987,color:#cfeed1
-  classDef gw fill:#2a1d3a,stroke:#bd87dd,color:#e0c0f0
-  classDef svc fill:#1f262e,stroke:#88c0d0,color:#c0e2eb
-  classDef restate fill:#3a2f0d,stroke:#fbbf24,color:#fbbf24
-
-  browser["Browser
-operator · approver · portal"]:::ext
-
-  bff["BFF · :3001
-serves every browser page"]:::bff
-
-  opsagent["ops-agent · :9083
-Session VO
-agent loop"]:::agent
-
-  approvalsvc["approval-service · :9085
-ApprovalService VO
-Pending + Decided indexes"]:::svc
-
-  gateway["gateway · :9080
-Gateway · ToolRegistry
-CostLedger · TokenBucket"]:::gw
-
-  llmsvc["llm-svc · :9087
-LLMService"]:::svc
-
-  guardrails["guardrails · :9084
-PIIGuardrail"]:::svc
-
-  delivery["delivery-svc · :9081
-delivery_lookup
-escalation_history"]:::svc
-
-  customer["customer-svc · :9082
-customer_lookup
-apply_credit
-customer_outreach"]:::svc
-
-  insights["insights-svc · :9086
-semantic_search
-merchant_status"]:::svc
-
-  restate["Restate runtime · ingress :8080 · admin :9070 · durable execution beneath every process above"]:::restate
-
-  browser ==>|HTTP| bff
-
-  bff -->|sessions: send / state / reset / appeal| opsagent
-  bff -->|approvals: pending / respond / history| approvalsvc
-
-  opsagent -->|callTool / callLLM| gateway
-  opsagent -->|requestApproval| approvalsvc
-
-  gateway -->|check| guardrails
-  gateway -->|complete| llmsvc
-  gateway -->|verifyToken| approvalsvc
-  gateway -->|dispatch tool| delivery
-  gateway -->|dispatch tool| customer
-  gateway -->|dispatch tool| insights
-
-  guardrails -.callLLM.-> gateway
-  insights -.callLLM.-> gateway
-
-  %% Invisible links pin Restate to the bottom as a labelled layer.
-  opsagent ~~~ restate
-  gateway ~~~ restate
-  approvalsvc ~~~ restate
-  llmsvc ~~~ restate
-  guardrails ~~~ restate
-  delivery ~~~ restate
-  customer ~~~ restate
-  insights ~~~ restate
-```
+![Architecture](./architecture.svg)
 
 **How to read this:**
 
 - Every box is a separate **OS process**. `lsof -nP -iTCP -sTCP:LISTEN` shows one TCP listener per port.
 - The **Restate runtime is the layer underneath everything** — every arrow above actually traverses Restate's ingress at runtime, which is how the calls become durable, journaled, and replayable. We don't draw arrows in and out of the runtime because it would clutter every edge without adding information; the durability is a property of the substrate.
-- The two **BFF → backend** arrows shown are the chat-app-level interfaces: the operator UI ↔ Session VO and the approver UI ↔ ApprovalService + indexes. The BFF also reads ops-view state from every other service to render `/ops/<svc>` pages — that's plumbing for the inspection UI, not part of the architecture, so it's not drawn.
+- **The browser drives the agent.** A stateless BFF on `:3001` sits between them serving static HTML and proxying requests, but it's plumbing rather than architecture, so it's elided here.
 - The **agent → gateway → fan-out** is the central pattern. Every external call the agent makes flows through `Gateway.callTool` or `Gateway.callLLM`; the gateway then runs middleware (PII, approval policy, rate limit) and dispatches to a tool service, the LLM service, or the approval service depending on the situation.
-- The **dotted arrows** (`guardrails → gateway`, `insights → gateway`) are cross-cutting LLM calls — the PII classifier and the semantic-search tool route their *own* LLM access back through `Gateway.callLLM` so every LLM call gets the same policy/cost/audit treatment.
+- **Async human-in-the-loop** shows up as `ops-agent → approval-service`: the agent suspends on an awakeable while waiting for a decision, and resumes from journal once the approver answers.
 - A supervisor process spawns and kills every box above (see [Running it](#running-it)) but it's operational tooling rather than part of the architecture, so it's not drawn here.
+
+(Diagram source lives in [`architecture.mmd`](./architecture.mmd); regenerate with `npx -p @mermaid-js/mermaid-cli mmdc -i architecture.mmd -o architecture.svg -b transparent`.)
 
 ## What each process does
 

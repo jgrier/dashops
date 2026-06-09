@@ -1,0 +1,62 @@
+flowchart TB
+  classDef ext fill:#1e293b,stroke:#64748b,color:#f1f5f9
+  classDef agent fill:#1e3a1e,stroke:#7dd987,color:#cfeed1
+  classDef gw fill:#2a1d3a,stroke:#bd87dd,color:#e0c0f0
+  classDef svc fill:#1f262e,stroke:#88c0d0,color:#c0e2eb
+  classDef restate fill:#3a2f0d,stroke:#fbbf24,color:#fbbf24
+
+  browser["Browser
+operator · approver"]:::ext
+
+  opsagent["ops-agent · :9083
+Session VO
+agent loop"]:::agent
+
+  gateway["gateway · :9080
+Gateway · ToolRegistry
+CostLedger · TokenBucket"]:::gw
+
+  approvalsvc["approval-service · :9085
+ApprovalService VO
+Pending + Decided indexes"]:::svc
+
+  llmsvc["llm-svc · :9087
+LLMService"]:::svc
+
+  guardrails["guardrails · :9084
+PIIGuardrail"]:::svc
+
+  delivery["delivery-svc · :9081
+delivery_lookup
+escalation_history"]:::svc
+
+  customer["customer-svc · :9082
+customer_lookup
+apply_credit
+customer_outreach"]:::svc
+
+  insights["insights-svc · :9086
+semantic_search
+merchant_status"]:::svc
+
+  restate["Restate runtime · ingress :8080 · admin :9070 · durable execution beneath every service above"]:::restate
+
+  browser ==> opsagent
+
+  opsagent -->|callTool / callLLM| gateway
+  opsagent -->|requestApproval| approvalsvc
+
+  gateway -->|check| guardrails
+  gateway -->|complete| llmsvc
+  gateway -->|dispatch| delivery
+  gateway -->|dispatch| customer
+  gateway -->|dispatch| insights
+
+  opsagent ~~~ restate
+  gateway ~~~ restate
+  approvalsvc ~~~ restate
+  llmsvc ~~~ restate
+  guardrails ~~~ restate
+  delivery ~~~ restate
+  customer ~~~ restate
+  insights ~~~ restate
