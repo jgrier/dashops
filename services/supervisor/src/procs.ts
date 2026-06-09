@@ -88,7 +88,12 @@ export async function start(name: string): Promise<void> {
     cwd: state.spec.cwd,
     env,
     stdio: ["ignore", "pipe", "pipe"],
-    // detached:false so children die with the supervisor
+    // Put the child in its own process group (it becomes pgid leader). On
+    // SIGTERM/SIGKILL we then signal the whole group with kill(-pgid, sig)
+    // so grandchildren die too — critical on Linux where the
+    // npm → sh → tsx → node wrapper chain doesn't reliably forward
+    // signals and the actual node process orphans.
+    detached: true,
   });
 
   state.proc = proc;
@@ -118,20 +123,37 @@ export async function start(name: string): Promise<void> {
   });
 }
 
+// Signal the child's entire process group (npm → sh → tsx → node tree).
+// Spawned with detached:true so each child is a pgid leader; we kill the
+// group with the negative-pid trick. Falls back to a single-pid signal if
+// the group is already gone.
+function signalGroup(state: ProcState, signal: NodeJS.Signals): void {
+  if (state.pid === undefined) return;
+  try {
+    process.kill(-state.pid, signal);
+  } catch {
+    try {
+      state.proc?.kill(signal);
+    } catch {
+      // process already dead — nothing to do
+    }
+  }
+}
+
 export async function stop(name: string, signal: NodeJS.Signals = "SIGTERM"): Promise<void> {
   const state = states.get(name);
   if (!state || !state.proc) return;
   state.status = "stopped";
   state.log.push(`[supervisor] stopping (${signal})`);
-  state.proc.kill(signal);
-  // Best-effort hard-kill if it lingers. The default is generous because
-  // `docker compose up` takes ~10s to stop its container gracefully on
-  // SIGTERM; bumping the timeout lets the container shut down cleanly
-  // instead of leaking after a TUI `k` keypress.
+  signalGroup(state, signal);
+  // Best-effort hard-kill if the group lingers. The default is generous
+  // because `docker compose up` takes ~10s to stop its container
+  // gracefully on SIGTERM; bumping the timeout lets the container shut
+  // down cleanly instead of leaking after a TUI `k` keypress.
   setTimeout(() => {
     if (state.proc && !state.proc.killed) {
       state.log.push(`[supervisor] forcing SIGKILL`);
-      state.proc.kill("SIGKILL");
+      signalGroup(state, "SIGKILL");
     }
   }, 15000);
 }
@@ -145,7 +167,7 @@ export async function restart(name: string): Promise<void> {
 
 export async function stopAll(): Promise<void> {
   for (const s of states.values()) {
-    if (s.proc) s.proc.kill("SIGTERM");
+    if (s.proc) signalGroup(s, "SIGTERM");
   }
 }
 
